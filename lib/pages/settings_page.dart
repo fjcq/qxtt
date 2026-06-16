@@ -39,7 +39,7 @@ class SettingsPage extends ConsumerWidget
                         subtitle: const Text('下载时自动解密图片', style: TextStyle(fontSize: 12)),
                         trailing: Switch(
                             value: config.decodeImage,
-                            activeColor: AppColors.accent,
+                            activeThumbColor: AppColors.accent,
                             onChanged: (value) => ref.read(configProvider.notifier).updateConfig(
                                 config.copyWith(decodeImage: value),
                             ),
@@ -62,7 +62,7 @@ class SettingsPage extends ConsumerWidget
                         title: const Text('使用代理'),
                         trailing: Switch(
                             value: config.useProxy,
-                            activeColor: AppColors.accent,
+                            activeThumbColor: AppColors.accent,
                             onChanged: (value) => ref.read(configProvider.notifier).updateProxy(
                                 url: config.proxyUrl,
                                 enabled: value,

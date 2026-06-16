@@ -139,7 +139,7 @@ class AlbumDetailPage extends ConsumerWidget
                         width: 120,
                         height: 160,
                         fit: BoxFit.cover,
-                        httpHeaders: {
+                        httpHeaders: const {
                             'Referer': 'https://www.cdnhjk.net/',
                         },
                         placeholder: (_, __) => Container(

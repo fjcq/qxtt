@@ -36,4 +36,7 @@ class DownloadTaskModel
 
     /// 封面路径
     String? coverPath;
+
+    /// 下载速度（仅运行时使用，不持久化）
+    String speed = '';
 }

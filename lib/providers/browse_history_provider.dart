@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database/browse_history_dao.dart';
-import 'search_provider.dart';
 
 /// 浏览历史状态
 class BrowseHistoryState

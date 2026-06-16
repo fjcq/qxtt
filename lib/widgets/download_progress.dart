@@ -14,11 +14,15 @@ class DownloadProgress extends StatelessWidget
     /// 当前/总数 文本
     final String countText;
 
+    /// 下载速度文本
+    final String speedText;
+
     const DownloadProgress({
         super.key,
         required this.progress,
         this.statusText = '',
         this.countText = '',
+        this.speedText = '',
     });
 
     @override
@@ -31,18 +35,37 @@ class DownloadProgress extends StatelessWidget
                 Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                        Text(
-                            statusText,
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
+                        Expanded(
+                            child: Text(
+                                statusText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                ),
                             ),
                         ),
-                        Text(
-                            countText,
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
+                        if (speedText.isNotEmpty)
+                            Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Text(
+                                    speedText,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.accent,
+                                        fontWeight: FontWeight.w500,
+                                    ),
+                                ),
+                            ),
+                        Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Text(
+                                countText,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                ),
                             ),
                         ),
                     ],

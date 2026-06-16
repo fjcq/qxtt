@@ -48,7 +48,7 @@ class JmImage
 
         final pixels = Uint32List.fromList(
             imageBytes is Uint32List
-                ? imageBytes as Uint32List
+                ? imageBytes
                 : Uint32List.fromList(imageBytes.cast<int>()),
         );
         final decoded = Uint32List(pixels.length);

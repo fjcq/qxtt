@@ -146,7 +146,7 @@ class ReaderNotifier extends StateNotifier<ReaderState>
     /// 切换阅读模式
     void toggleMode()
     {
-        final modes = ReaderMode.values;
+        const modes = ReaderMode.values;
         final currentIndex = modes.indexOf(state.mode);
         final nextIndex = (currentIndex + 1) % modes.length;
         state = state.copyWith(mode: modes[nextIndex]);

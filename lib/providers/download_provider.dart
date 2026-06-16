@@ -6,6 +6,7 @@ import '../core/download/download_service.dart';
 import '../data/database/task_dao.dart';
 import '../data/models/download_task_model.dart';
 import 'search_provider.dart';
+import 'config_provider.dart';
 
 /// 下载管理状态
 class DownloadState
@@ -58,9 +59,30 @@ class DownloadNotifier extends StateNotifier<DownloadState>
         _loadTasks();
         _progressSub = _downloadService.onProgress.listen((progress)
         {
-            // 进度更新时刷新任务列表
-            _loadTasks();
+            // 进度更新时直接更新内存中的任务状态，避免频繁读取文件
+            _updateTaskProgress(progress);
         });
+    }
+
+    /// 根据进度事件更新内存中的任务状态
+    void _updateTaskProgress(DownloadProgressEvent progress)
+    {
+        final tasks = state.tasks.map((task)
+        {
+            if (task.taskId == progress.taskId)
+            {
+                return task
+                    ..currentImage = progress.current
+                    ..totalImages = progress.total
+                    ..progress = progress.progress
+                    ..speed = progress.speed
+                    ..message = progress.speed.isNotEmpty
+                        ? '下载中 ${progress.speed}'
+                        : '下载中';
+            }
+            return task;
+        }).toList();
+        state = state.copyWith(tasks: tasks);
     }
 
     /// 加载所有任务
@@ -134,10 +156,14 @@ final downloadServiceProvider = Provider<DownloadService>((ref)
 {
     final client = ref.watch(jmClientProvider);
     final taskDao = ref.watch(taskDaoProvider);
+    final config = ref.watch(configProvider).config;
+    // 异步获取默认目录，同步使用当前值
+    final downloadDir = config.downloadDir;
     return DownloadService(
         client: client,
         taskDao: taskDao,
-        downloadDir: '', // 将在初始化时设置
+        downloadDir: downloadDir,
+        decodeImage: config.decodeImage,
     );
 });
 

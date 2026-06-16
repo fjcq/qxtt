@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/jm/jm_client.dart';
 import '../data/database/library_dao.dart';
 import '../data/models/library_album_model.dart';
 import 'search_provider.dart';
@@ -41,9 +40,8 @@ class LibraryState
 class LibraryNotifier extends StateNotifier<LibraryState>
 {
     final LibraryDao _libraryDao;
-    final JmClient _client;
 
-    LibraryNotifier(this._libraryDao, this._client) : super(const LibraryState());
+    LibraryNotifier(this._libraryDao) : super(const LibraryState());
 
     /// 加载书架
     Future<void> loadLibrary() async
@@ -96,6 +94,5 @@ class LibraryNotifier extends StateNotifier<LibraryState>
 final libraryProvider = StateNotifierProvider<LibraryNotifier, LibraryState>((ref)
 {
     final libraryDao = ref.watch(libraryDaoProvider);
-    final client = ref.watch(jmClientProvider);
-    return LibraryNotifier(libraryDao, client);
+    return LibraryNotifier(libraryDao);
 });

@@ -144,7 +144,7 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                         Icon(
                             Icons.library_books,
                             size: 64,
-                            color: AppColors.textDisabled.withOpacity(0.5),
+                            color: AppColors.textDisabled.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
                         const Text(
@@ -311,7 +311,7 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                         Icon(
                             Icons.download_outlined,
                             size: 64,
-                            color: AppColors.textDisabled.withOpacity(0.5),
+                            color: AppColors.textDisabled.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
                         const Text(
@@ -385,7 +385,7 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                                         vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                        color: statusColor.withOpacity(0.2),
+                                        color: statusColor.withValues(alpha: 0.2),
                                         borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
@@ -405,6 +405,7 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                             progress: task.progress,
                             statusText: task.message,
                             countText: '${task.currentImage}/${task.totalImages}',
+                            speedText: task.speed,
                         ),
                         // 操作按钮
                         if (task.status == 'running' || task.status == 'pending')

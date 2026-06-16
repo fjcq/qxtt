@@ -63,7 +63,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                         Icon(
                             Icons.history,
                             size: 64,
-                            color: AppColors.textDisabled.withOpacity(0.5),
+                            color: AppColors.textDisabled.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
                         const Text(

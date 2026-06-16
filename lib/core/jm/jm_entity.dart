@@ -192,8 +192,14 @@ class AlbumDetail
         // page_count 安全解析
         int pageCount = 0;
         final pcRaw = json['page_count'];
-        if (pcRaw is int) pageCount = pcRaw;
-        else if (pcRaw != null) pageCount = int.tryParse(pcRaw.toString()) ?? 0;
+        if (pcRaw is int)
+        {
+            pageCount = pcRaw;
+        }
+        else if (pcRaw != null)
+        {
+            pageCount = int.tryParse(pcRaw.toString()) ?? 0;
+        }
 
         return AlbumDetail(
             albumId: albumId,

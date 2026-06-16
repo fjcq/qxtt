@@ -11,9 +11,8 @@ class JmClient
 {
     late final Dio _dio;
     List<String> _domainList = List.from(JmConfig.domainApiList);
-    List<String> _imageDomainList = List.from(JmConfig.domainImageList);
-    Map<String, String> _cookies = {};
-    int _retryTimes = 3;
+    final List<String> _imageDomainList = List.from(JmConfig.domainImageList);
+    final Map<String, String> _cookies = {};
     bool _initialized = false;
 
     JmClient()
@@ -287,7 +286,7 @@ class JmClient
     String getAlbumCoverUrl(String albumId, {String size = '_3x4'})
     {
         final domain = _imageDomainList.first;
-        return 'https://$domain/media/albums/${albumId}$size.jpg';
+        return 'https://$domain/media/albums/$albumId$size.jpg';
     }
 
     /// 获取章节图片 URL

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../data/models/app_config_model.dart';
 
@@ -31,7 +34,20 @@ class ConfigState
 /// 配置 Provider
 class ConfigNotifier extends StateNotifier<ConfigState>
 {
-    ConfigNotifier() : super(ConfigState());
+    ConfigNotifier() : super(ConfigState())
+    {
+        _initDefaultDownloadDir();
+    }
+
+    /// 初始化默认下载目录
+    Future<void> _initDefaultDownloadDir() async
+    {
+        if (state.config.downloadDir.isEmpty)
+        {
+            final dir = await getApplicationDocumentsDirectory();
+            updateDownloadDir('${dir.path}${Platform.pathSeparator}downloads');
+        }
+    }
 
     /// 更新配置
     void updateConfig(AppConfigModel config)

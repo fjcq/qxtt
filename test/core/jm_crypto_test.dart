@@ -12,17 +12,17 @@ void main()
         test('token 生成测试', () async
         {
             // 测试 md5 计算
-            final ts = 1700566805;
-            final secret = '185Hcomic3PAPP7R';
+            const ts = 1700566805;
+            const secret = '185Hcomic3PAPP7R';
             final expected = md5.convert(utf8.encode('$ts$secret')).toString();
             expect(expected, isNotEmpty);
         });
 
         test('tokenparam 格式测试', () async
         {
-            final ts = 1700566805;
-            final ver = '2.0.26';
-            final tokenparam = '$ts,$ver';
+            const ts = 1700566805;
+            const ver = '2.0.26';
+            const tokenparam = '$ts,$ver';
             expect(tokenparam, '1700566805,2.0.26');
         });
     });

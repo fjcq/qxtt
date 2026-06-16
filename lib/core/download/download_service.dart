@@ -10,7 +10,7 @@ import '../../data/database/task_dao.dart';
 import '../../data/models/download_task_model.dart';
 
 /// 下载进度事件
-class DownloadProgress
+class DownloadProgressEvent
 {
     /// 任务 ID
     final String taskId;
@@ -27,7 +27,7 @@ class DownloadProgress
     /// 进度 0.0 ~ 1.0
     final double progress;
 
-    const DownloadProgress({
+    const DownloadProgressEvent({
         required this.taskId,
         required this.current,
         required this.total,
@@ -42,18 +42,19 @@ class DownloadService
     final JmClient _client;
     final TaskDao _taskDao;
     final String _downloadDir;
-    final int _imageThreadCount;
-    final int _photoThreadCount;
     final bool _decodeImage;
 
     /// 活跃的下载任务取消器
     final Map<String, CancelToken> _cancelTokens = {};
 
     /// 下载进度流控制器
-    final _progressController = StreamController<DownloadProgress>.broadcast();
+    final _progressController = StreamController<DownloadProgressEvent>.broadcast();
 
     /// 下载进度流
-    Stream<DownloadProgress> get onProgress => _progressController.stream;
+    Stream<DownloadProgressEvent> get onProgress => _progressController.stream;
+
+    /// 每个任务的下载统计信息
+    final Map<String, _DownloadStats> _taskStats = {};
 
     DownloadService({
         required JmClient client,
@@ -65,8 +66,6 @@ class DownloadService
     })  : _client = client,
           _taskDao = taskDao,
           _downloadDir = downloadDir,
-          _imageThreadCount = imageThreadCount,
-          _photoThreadCount = photoThreadCount,
           _decodeImage = decodeImage;
 
     /// 创建下载任务
@@ -95,6 +94,7 @@ class DownloadService
     {
         final cancelToken = CancelToken();
         _cancelTokens[taskId] = cancelToken;
+        _taskStats[taskId] = _DownloadStats();
 
         try
         {
@@ -153,6 +153,7 @@ class DownloadService
         finally
         {
             _cancelTokens.remove(taskId);
+            _taskStats.remove(taskId);
         }
     }
 
@@ -161,6 +162,7 @@ class DownloadService
     {
         final cancelToken = CancelToken();
         _cancelTokens[taskId] = cancelToken;
+        _taskStats[taskId] = _DownloadStats();
 
         try
         {
@@ -193,6 +195,7 @@ class DownloadService
         finally
         {
             _cancelTokens.remove(taskId);
+            _taskStats.remove(taskId);
         }
     }
 
@@ -253,6 +256,9 @@ class DownloadService
                 // 下载图片
                 final imageBytes = await _client.downloadImage(imageUrl);
 
+                // 记录下载字节数
+                _taskStats[taskId]?.addBytes(imageBytes.length);
+
                 // 图片解密
                 if (_decodeImage && scrambleId > 0)
                 {
@@ -262,15 +268,18 @@ class DownloadService
                     );
                     if (num > 0)
                     {
-                        // 在实际项目中这里应该使用 Isolate 处理
-                        // 目前简化为同步处理
                         await _decodeAndSave(imageBytes, num, savePath);
-                        continue;
+                    }
+                    else
+                    {
+                        await File(savePath).writeAsBytes(imageBytes);
                     }
                 }
-
-                // 直接保存
-                await File(savePath).writeAsBytes(imageBytes);
+                else
+                {
+                    // 直接保存
+                    await File(savePath).writeAsBytes(imageBytes);
+                }
             }
             catch (e)
             {
@@ -280,6 +289,9 @@ class DownloadService
 
             completedImages++;
             final progress = totalImages > 0 ? completedImages / totalImages : 0.0;
+            await _taskDao.updateTaskProgress(
+                taskId, completedImages, totalImages, progress,
+            );
             _emitProgress(taskId, completedImages, totalImages, progress);
         }
     }
@@ -309,18 +321,62 @@ class DownloadService
     /// 发送进度事件
     void _emitProgress(String taskId, int current, int total, double progress)
     {
-        _progressController.add(DownloadProgress(
+        final stats = _taskStats[taskId];
+        final speed = stats != null ? _formatSpeed(stats.getSpeed()) : '';
+        _progressController.add(DownloadProgressEvent(
             taskId: taskId,
             current: current,
             total: total,
-            speed: '',
+            speed: speed,
             progress: progress,
         ));
+    }
+
+    /// 格式化下载速度
+    static String _formatSpeed(double bytesPerSecond)
+    {
+        if (bytesPerSecond <= 0) return '';
+        if (bytesPerSecond < 1024)
+        {
+            return '${bytesPerSecond.toStringAsFixed(0)} B/s';
+        }
+        else if (bytesPerSecond < 1024 * 1024)
+        {
+            return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
+        }
+        else
+        {
+            return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+        }
     }
 
     /// 释放资源
     void dispose()
     {
         _progressController.close();
+    }
+}
+
+/// 下载统计信息（用于计算下载速度）
+class _DownloadStats
+{
+    /// 下载开始时间
+    final DateTime _startTime = DateTime.now();
+
+    /// 已下载总字节数
+    int _totalBytes = 0;
+
+    /// 添加已下载字节数
+    void addBytes(int bytes)
+    {
+        _totalBytes += bytes;
+    }
+
+    /// 计算下载速度（字节/秒）
+    double getSpeed()
+    {
+        final elapsed = DateTime.now().difference(_startTime).inMilliseconds;
+        if (elapsed <= 0) return 0.0;
+        return _totalBytes / (elapsed / 1000.0);
     }
 }

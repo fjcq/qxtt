@@ -93,7 +93,7 @@ class AlbumCard extends StatelessWidget
                 width: double.infinity,
                 placeholder: (context, url) => _buildPlaceholder(),
                 errorWidget: (context, url, error) => _buildPlaceholder(),
-                httpHeaders: {
+                httpHeaders: const {
                     'Referer': 'https://www.cdnhjk.net/',
                 },
             );
