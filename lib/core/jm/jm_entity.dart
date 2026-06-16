@@ -1,0 +1,350 @@
+import '../jm/jm_config.dart';
+
+/// 禁漫数据实体定义
+class SearchResult
+{
+    /// 总数
+    final int total;
+
+    /// 总页数
+    final int pageCount;
+
+    /// 搜索结果列表
+    final List<SearchItem> results;
+
+    const SearchResult({
+        required this.total,
+        required this.pageCount,
+        required this.results,
+    });
+
+    factory SearchResult.fromJson(Map<String, dynamic> json)
+    {
+        final list = (json['content'] as List<dynamic>? ?? [])
+            .map((e) => SearchItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return SearchResult(
+            total: json['total'] as int? ?? 0,
+            pageCount: json['page_count'] as int? ?? 0,
+            results: list,
+        );
+    }
+}
+
+/// 搜索结果项
+class SearchItem
+{
+    /// 本子 ID
+    final String id;
+
+    /// 标题
+    final String title;
+
+    /// 作者
+    final String author;
+
+    /// 标签
+    final List<String> tags;
+
+    /// 封面 URL
+    final String coverUrl;
+
+    /// 页数
+    final int pageCount;
+
+    /// 分类
+    final String category;
+
+    const SearchItem({
+        required this.id,
+        required this.title,
+        this.author = '',
+        this.tags = const [],
+        this.coverUrl = '',
+        this.pageCount = 0,
+        this.category = '',
+    });
+
+    factory SearchItem.fromJson(Map<String, dynamic> json)
+    {
+        final id = json['id']?.toString() ?? '';
+        // API 返回的 image 字段通常为空，需要根据 id 拼接封面 URL
+        final imageField = json['image']?.toString() ?? json['cover']?.toString() ?? '';
+        final coverUrl = imageField.isNotEmpty
+            ? imageField
+            : 'https://${JmConfig.domainImageList.first}/media/albums/${id}_3x4.jpg';
+
+        // category 可能是字符串或 {id, title} 对象
+        String category = '';
+        final catRaw = json['category'];
+        if (catRaw is String)
+        {
+            category = catRaw;
+        }
+        else if (catRaw is Map)
+        {
+            category = catRaw['title']?.toString() ?? '';
+        }
+
+        // page_count 可能不存在或类型不同
+        int pageCount = 0;
+        final pcRaw = json['page_count'];
+        if (pcRaw is int)
+        {
+            pageCount = pcRaw;
+        }
+        else if (pcRaw != null)
+        {
+            pageCount = int.tryParse(pcRaw.toString()) ?? 0;
+        }
+
+        return SearchItem(
+            id: id,
+            title: json['name']?.toString() ?? json['title']?.toString() ?? '',
+            author: json['author']?.toString() ?? '',
+            tags: (json['tags'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+            coverUrl: coverUrl,
+            pageCount: pageCount,
+            category: category,
+        );
+    }
+}
+
+/// 本子详情
+class AlbumDetail
+{
+    /// 本子 ID
+    final String albumId;
+
+    /// 标题
+    final String name;
+
+    /// 原始标题
+    final String oname;
+
+    /// 作者
+    final String author;
+
+    /// 作者列表
+    final List<String> authors;
+
+    /// 标签
+    final List<String> tags;
+
+    /// 页数
+    final int pageCount;
+
+    /// 章节数
+    final int episodeCount;
+
+    /// 章节列表
+    final List<Episode> episodes;
+
+    /// 发布日期
+    final String pubDate;
+
+    /// 浏览量
+    final String views;
+
+    /// 点赞数
+    final String likes;
+
+    /// 简介
+    final String description;
+
+    /// 封面 URL
+    final String coverUrl;
+
+    const AlbumDetail({
+        required this.albumId,
+        required this.name,
+        this.oname = '',
+        this.author = '',
+        this.authors = const [],
+        this.tags = const [],
+        this.pageCount = 0,
+        this.episodeCount = 0,
+        this.episodes = const [],
+        this.pubDate = '',
+        this.views = '',
+        this.likes = '',
+        this.description = '',
+        this.coverUrl = '',
+    });
+
+    factory AlbumDetail.fromJson(Map<String, dynamic> json)
+    {
+        final episodeList =
+            (json['series'] as List<dynamic>? ?? [])
+                .map((e) => Episode.fromJson(e as Map<String, dynamic>))
+                .toList();
+
+        // 封面 URL：image 为空时根据 id 拼接
+        final albumId = json['id']?.toString() ?? '';
+        final imageField = json['image']?.toString() ?? json['cover']?.toString() ?? '';
+        final coverUrl = imageField.isNotEmpty
+            ? imageField
+            : 'https://${JmConfig.domainImageList.first}/media/albums/${albumId}_3x4.jpg';
+
+        // page_count 安全解析
+        int pageCount = 0;
+        final pcRaw = json['page_count'];
+        if (pcRaw is int) pageCount = pcRaw;
+        else if (pcRaw != null) pageCount = int.tryParse(pcRaw.toString()) ?? 0;
+
+        return AlbumDetail(
+            albumId: albumId,
+            name: json['name']?.toString() ?? '',
+            oname: json['oname']?.toString() ?? '',
+            author: json['author']?.toString() ?? '',
+            authors: (json['authors'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+            tags: (json['tags'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+            pageCount: pageCount,
+            episodeCount: json['episode_count'] as int? ?? 0,
+            episodes: episodeList,
+            pubDate: json['pub_date']?.toString() ?? '',
+            views: json['views']?.toString() ?? '',
+            likes: json['likes']?.toString() ?? '',
+            description: json['description']?.toString() ?? '',
+            coverUrl: coverUrl,
+        );
+    }
+}
+
+/// 章节信息
+class Episode
+{
+    /// 章节 ID
+    final String photoId;
+
+    /// 序号
+    final String index;
+
+    /// 标题
+    final String name;
+
+    const Episode({
+        required this.photoId,
+        required this.index,
+        required this.name,
+    });
+
+    factory Episode.fromJson(Map<String, dynamic> json)
+    {
+        return Episode(
+            photoId: json['id']?.toString() ?? '',
+            index: json['index']?.toString() ?? '',
+            name: json['name']?.toString() ?? '',
+        );
+    }
+}
+
+/// 章节详情
+class PhotoDetail
+{
+    /// 章节 ID
+    final String photoId;
+
+    /// 本子 ID
+    final String albumId;
+
+    /// 标题
+    final String name;
+
+    /// 图片文件名列表
+    final List<String> pageArr;
+
+    /// 图片域名
+    final String imageDomain;
+
+    /// 图片后缀
+    final String imageSuffix;
+
+    const PhotoDetail({
+        required this.photoId,
+        required this.albumId,
+        this.name = '',
+        this.pageArr = const [],
+        this.imageDomain = '',
+        this.imageSuffix = '.jpg',
+    });
+
+    factory PhotoDetail.fromJson(Map<String, dynamic> json)
+    {
+        return PhotoDetail(
+            photoId: json['id']?.toString() ?? '',
+            albumId: json['aid']?.toString() ?? '',
+            name: json['name']?.toString() ?? '',
+            pageArr: (json['images'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+            imageDomain: json['domain']?.toString() ?? '',
+            imageSuffix: json['suffix']?.toString() ?? '.jpg',
+        );
+    }
+}
+
+/// 登录结果
+class LoginResult
+{
+    /// 是否成功
+    final bool success;
+
+    /// 用户名
+    final String username;
+
+    /// 消息
+    final String message;
+
+    const LoginResult({
+        required this.success,
+        this.username = '',
+        this.message = '',
+    });
+
+    factory LoginResult.fromJson(Map<String, dynamic> json)
+    {
+        return LoginResult(
+            success: json['code'] == 200,
+            username: json['username']?.toString() ?? '',
+            message: json['message']?.toString() ?? '',
+        );
+    }
+}
+
+/// 图片详情（用于下载）
+class ImageDetail
+{
+    /// 图片 URL
+    final String url;
+
+    /// 文件名
+    final String filename;
+
+    /// 本子 ID
+    final int aid;
+
+    /// 章节 ID
+    final String photoId;
+
+    /// 保存路径
+    final String savePath;
+
+    const ImageDetail({
+        required this.url,
+        required this.filename,
+        required this.aid,
+        required this.photoId,
+        required this.savePath,
+    });
+}
