@@ -1,4 +1,4 @@
-package com.jmcomic.mobile
+package com.qxyys.jmcomic
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -23,6 +23,41 @@ class PathHelper
         return '$downloadDir${Platform.pathSeparator}$title${Platform.pathSeparator}$episode';
     }
 
+    /// 清理文件名中的非法字符
+    /// 与 DownloadService 中的规则保持一致，避免本地查找时路径不匹配
+    static String sanitizeFileName(String name)
+    {
+        var result = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+        result = result.trimRight();
+        while (result.endsWith('.'))
+        {
+            result = result.substring(0, result.length - 1);
+        }
+        if (result.isEmpty)
+        {
+            result = 'unnamed';
+        }
+        return result;
+    }
+
+    /// 构造单页图片本地路径
+    /// {downloadDir}/{albumTitle}/{episodeIndex}/{seq}.jpg
+    static String getPagePath(
+        String downloadDir,
+        String albumTitle,
+        String episodeIndex,
+        int pageIndex,
+    )
+    {
+        final seq = (pageIndex + 1).toString().padLeft(5, '0');
+        final albumDir = getAlbumPath(
+            downloadDir,
+            sanitizeFileName(albumTitle),
+            sanitizeFileName(episodeIndex),
+        );
+        return '$albumDir${Platform.pathSeparator}$seq.jpg';
+    }
+
     /// 获取缓存目录
     static Future<String> getCacheDir() async
     {

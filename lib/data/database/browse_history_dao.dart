@@ -23,6 +23,9 @@ class BrowseHistoryModel
 
     /// 最后阅读页码
     late int lastReadPage;
+
+    /// 最后阅读的章节 ID（在线阅读器进度记忆用）
+    String? lastReadPhotoId;
 }
 
 /// 浏览历史数据访问对象（JSON文件持久化）
@@ -68,8 +71,11 @@ class BrowseHistoryDao
         try
         {
             final file = File(await _getFilePath());
+            // 显式创建父目录，避免在 Windows 首次运行时因
+            // getApplicationSupportDirectory 返回的子目录尚未创建而写入失败
+            await file.parent.create(recursive: true);
             final jsonList = _history.map((h) => _toJson(h)).toList();
-            await file.writeAsString(jsonEncode(jsonList));
+            await file.writeAsString(jsonEncode(jsonList), flush: true);
         }
         catch (_)
         {
@@ -87,6 +93,7 @@ class BrowseHistoryDao
             'author': h.author,
             'browsedAt': h.browsedAt,
             'lastReadPage': h.lastReadPage,
+            'lastReadPhotoId': h.lastReadPhotoId,
         };
     }
 
@@ -99,7 +106,8 @@ class BrowseHistoryDao
             ..coverUrl = json['coverUrl']?.toString() ?? ''
             ..author = json['author']?.toString() ?? ''
             ..browsedAt = json['browsedAt']?.toString() ?? ''
-            ..lastReadPage = (json['lastReadPage'] as num?)?.toInt() ?? 0;
+            ..lastReadPage = (json['lastReadPage'] as num?)?.toInt() ?? 0
+            ..lastReadPhotoId = json['lastReadPhotoId']?.toString();
     }
 
     /// 添加浏览记录（已存在则更新）
@@ -114,6 +122,35 @@ class BrowseHistoryDao
             _history = _history.sublist(0, 200);
         }
         await _save();
+    }
+
+    /// 更新阅读进度（如果记录不存在则不操作）
+    /// [page] 0-based 页码
+    /// [photoId] 章节 ID
+    Future<void> updateReadProgress(String albumId, int page, String photoId) async
+    {
+        await _ensureLoaded();
+        final idx = _history.indexWhere((h) => h.albumId == albumId);
+        if (idx < 0) return;
+        final h = _history[idx];
+        h.lastReadPage = page;
+        h.lastReadPhotoId = photoId;
+        h.browsedAt = DateTime.now().toIso8601String();
+        // 移到最前
+        _history.removeAt(idx);
+        _history.insert(0, h);
+        await _save();
+    }
+
+    /// 读取指定 album 的历史（不存在返回 null）
+    Future<BrowseHistoryModel?> getHistory(String albumId) async
+    {
+        await _ensureLoaded();
+        for (final h in _history)
+        {
+            if (h.albumId == albumId) return h;
+        }
+        return null;
     }
 
     /// 获取所有浏览历史

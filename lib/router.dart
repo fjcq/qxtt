@@ -6,9 +6,11 @@ import '../pages/home_page.dart';
 import '../pages/history_page.dart';
 import '../pages/search_page.dart';
 import '../pages/album_detail_page.dart';
+import '../pages/online_reader_page.dart';
 import '../pages/reader_page.dart';
 import '../pages/download_page.dart';
 import '../pages/settings_page.dart';
+import '../pages/domain_management_page.dart';
 
 /// 应用路由配置
 final routerProvider = Provider<GoRouter>((ref)
@@ -68,6 +70,20 @@ final routerProvider = Provider<GoRouter>((ref)
                     final photoId = state.pathParameters['photoId']!;
                     return ReaderPage(photoId: photoId);
                 },
+            ),
+            GoRoute(
+                path: '/reader/online/:photoId',
+                name: 'reader-online',
+                builder: (context, state)
+                {
+                    final photoId = state.pathParameters['photoId']!;
+                    return OnlineReaderPage(photoId: photoId);
+                },
+            ),
+            GoRoute(
+                path: '/settings/domains',
+                name: 'settings-domains',
+                builder: (context, state) => const DomainManagementPage(),
             ),
         ],
     );

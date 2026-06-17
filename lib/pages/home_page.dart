@@ -76,7 +76,7 @@ class _HomePageState extends ConsumerState<HomePage>
 
         return Scaffold(
             appBar: AppBar(
-                title: const Text('JMComic'),
+                title: const Text('七星天堂'),
                 actions: [
                     IconButton(
                         icon: const Icon(Icons.search),
@@ -212,6 +212,7 @@ class _HomePageState extends ConsumerState<HomePage>
                 {
                     final album = state.results[index];
                     return AlbumCard(
+                        key: ValueKey(album.id),
                         album: album,
                         onTap: () => context.push('/album/${album.id}'),
                     );

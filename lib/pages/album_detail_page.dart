@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/jm/jm_client.dart';
 import '../core/jm/jm_entity.dart';
+import '../core/jm/jm_image.dart';
 import '../providers/search_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/browse_history_provider.dart';
+import '../providers/library_provider.dart';
 import '../data/database/browse_history_dao.dart';
 import '../theme/app_colors.dart';
 import '../widgets/episode_list.dart';
@@ -38,14 +39,23 @@ class AlbumDetailPage extends ConsumerWidget
             );
         }
 
+        // 确保书架数据已加载，以便正确显示已下载章节状态
+        final libraryState = ref.watch(libraryProvider);
+        if (!libraryState.isLoading && libraryState.albums.isEmpty)
+        {
+            Future.microtask(() => ref.read(libraryProvider.notifier).loadLibrary());
+        }
+
         if (state.detail != null && !state.isLoading && state.error == null)
         {
             // 记录浏览历史
+            final coverUrl = ref.read(jmClientProvider)
+                .getAlbumCoverUrl(state.detail!.albumId);
             Future.microtask(() =>
                 ref.read(browseHistoryProvider.notifier).addHistory(BrowseHistoryModel()
                     ..albumId = state.detail!.albumId
                     ..title = state.detail!.name
-                    ..coverUrl = JmClient().getAlbumCoverUrl(state.detail!.albumId)
+                    ..coverUrl = coverUrl
                     ..author = state.detail!.author
                     ..browsedAt = DateTime.now().toIso8601String()
                     ..lastReadPage = 0,
@@ -106,7 +116,7 @@ class AlbumDetailPage extends ConsumerWidget
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                     // 封面和信息
-                    _buildInfoSection(detail),
+                    _buildInfoSection(detail, ref),
                     const SizedBox(height: 16),
                     // 标签
                     if (detail.tags.isNotEmpty) _buildTags(detail.tags),
@@ -123,9 +133,9 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 构建信息区域
-    Widget _buildInfoSection(AlbumDetail detail)
+    Widget _buildInfoSection(AlbumDetail detail, WidgetRef ref)
     {
-        final client = JmClient();
+        final client = ref.watch(jmClientProvider);
         final coverUrl = client.getAlbumCoverUrl(detail.albumId);
 
         return Row(
@@ -136,12 +146,10 @@ class AlbumDetailPage extends ConsumerWidget
                     borderRadius: BorderRadius.circular(8),
                     child: CachedNetworkImage(
                         imageUrl: coverUrl,
+                        cacheManager: JmImageCacheManager.instance,
                         width: 120,
                         height: 160,
                         fit: BoxFit.cover,
-                        httpHeaders: const {
-                            'Referer': 'https://www.cdnhjk.net/',
-                        },
                         placeholder: (_, __) => Container(
                             width: 120,
                             height: 160,
@@ -276,6 +284,9 @@ class AlbumDetailPage extends ConsumerWidget
     /// 构建章节列表
     Widget _buildEpisodes(BuildContext context, WidgetRef ref, AlbumDetail detail)
     {
+        // 监听本子已下载的章节 ID 集合，用于隐藏对应下载按钮
+        final downloadedPhotoIds = ref.watch(downloadedEpisodesProvider(albumId));
+
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -290,8 +301,10 @@ class AlbumDetailPage extends ConsumerWidget
                 const SizedBox(height: 8),
                 EpisodeList(
                     episodes: detail.episodes,
-                    onDownload: (episode) => _downloadPhoto(context, ref, episode, detail.name),
-                    onRead: (episode) => context.push('/reader/${episode.photoId}'),
+                    downloadedPhotoIds: downloadedPhotoIds,
+                    onDownload: (episode) =>
+                        _downloadPhoto(context, ref, episode, detail),
+                    onRead: (episode) => context.push('/reader/online/${episode.photoId}'),
                 ),
             ],
         );
@@ -315,28 +328,43 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 下载整本
-    void _downloadAlbum(BuildContext context, WidgetRef ref, AlbumDetail detail)
+    Future<void> _downloadAlbum(BuildContext context, WidgetRef ref, AlbumDetail detail) async
     {
-        ref.read(downloadProvider.notifier).createAndStartDownload(
+        final result = await ref.read(downloadProvider.notifier).createAndStartDownload(
             'album',
             detail.albumId,
             title: detail.name,
         );
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已添加下载任务: ${detail.name}')),
+            SnackBar(
+                content: Text(
+                    result.isNewlyCreated
+                        ? '已添加下载任务: ${detail.name}'
+                        : '该本子已在下载队列中,无需重复添加',
+                ),
+            ),
         );
     }
 
     /// 下载单章
-    void _downloadPhoto(BuildContext context, WidgetRef ref, Episode episode, String albumTitle)
+    Future<void> _downloadPhoto(BuildContext context, WidgetRef ref, Episode episode, AlbumDetail detail) async
     {
-        ref.read(downloadProvider.notifier).createAndStartDownload(
+        final result = await ref.read(downloadProvider.notifier).createAndStartDownload(
             'photo',
             episode.photoId,
-            title: '$albumTitle - ${episode.name}',
+            albumId: detail.albumId,
+            title: '${detail.name} - ${episode.name}',
         );
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已添加下载任务: ${episode.name}')),
+            SnackBar(
+                content: Text(
+                    result.isNewlyCreated
+                        ? '已添加下载任务: ${episode.name}'
+                        : '该章节已在下载队列中,无需重复添加',
+                ),
+            ),
         );
     }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../core/jm/jm_entity.dart';
+import '../core/jm/jm_image.dart';
 import '../theme/app_colors.dart';
 
 /// 本子卡片组件
@@ -89,13 +90,11 @@ class AlbumCard extends StatelessWidget
         {
             return CachedNetworkImage(
                 imageUrl: album.coverUrl,
+                cacheManager: JmImageCacheManager.instance,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 placeholder: (context, url) => _buildPlaceholder(),
                 errorWidget: (context, url, error) => _buildPlaceholder(),
-                httpHeaders: const {
-                    'Referer': 'https://www.cdnhjk.net/',
-                },
             );
         }
         return _buildPlaceholder();

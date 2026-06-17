@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/config_provider.dart';
 import '../data/models/app_config_model.dart';
+import '../core/jm/jm_image.dart';
 import '../theme/app_colors.dart';
 
 /// 设置页
@@ -46,6 +47,13 @@ class SettingsPage extends ConsumerWidget
                         ),
                     ),
                     ListTile(
+                        leading: const Icon(Icons.cleaning_services_outlined, color: AppColors.accent),
+                        title: const Text('清理解密缓存'),
+                        subtitle: const Text('清理在线观看时缓存的解密图片；算法更新后建议执行', style: TextStyle(fontSize: 12)),
+                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        onTap: () => _clearDecodedCache(context),
+                    ),
+                    ListTile(
                         leading: const Icon(Icons.settings_outlined, color: AppColors.accent),
                         title: const Text('图片线程数'),
                         subtitle: Text('${config.imageThreadCount}'),
@@ -57,6 +65,13 @@ class SettingsPage extends ConsumerWidget
 
                     // ===== 网络设置 =====
                     _buildSectionHeader('网络设置'),
+                    ListTile(
+                        leading: const Icon(Icons.dns_outlined, color: AppColors.accent),
+                        title: const Text('域名管理'),
+                        subtitle: const Text('切换/测试/获取最新图片与 API 域名', style: TextStyle(fontSize: 12)),
+                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        onTap: () => context.push('/settings/domains'),
+                    ),
                     ListTile(
                         leading: const Icon(Icons.vpn_lock_outlined, color: AppColors.accent),
                         title: const Text('使用代理'),
@@ -306,6 +321,39 @@ class SettingsPage extends ConsumerWidget
                     ),
                 ).toList(),
             ),
+        );
+    }
+
+    /// 清理解密缓存（在线观看缓存）
+    /// 修改解密算法或参数后，旧缓存会用错 aid 解密过的图，导致仍然错位
+    Future<void> _clearDecodedCache(BuildContext context) async
+    {
+        final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+                title: const Text('清理解密缓存'),
+                content: const Text('将清理在线观看时缓存的所有解密图片。\n'
+                    '下次观看时会重新下载并解密。\n'
+                    '已下载到本地的图片不受影响。'),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('取消'),
+                    ),
+                    ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('清理'),
+                    ),
+                ],
+            ),
+        );
+        if (confirmed != true) return;
+        if (!context.mounted) return;
+
+        await JmImageCacheManager.clearDecoded();
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('解密缓存已清理')),
         );
     }
 }

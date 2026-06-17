@@ -1,4 +1,7 @@
+import 'dart:io' as io;
+
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
 /// HTTP 客户端封装
 class HttpClient
@@ -8,8 +11,11 @@ class HttpClient
     /// 获取 Dio 实例
     Dio get dio => _dio;
 
+    /// 代理地址（例如 "127.0.0.1:7890"）
+    final String? proxyUrl;
+
     HttpClient({
-        String? proxyUrl,
+        this.proxyUrl,
         Duration connectTimeout = const Duration(seconds: 15),
         Duration receiveTimeout = const Duration(seconds: 30),
     })
@@ -18,6 +24,26 @@ class HttpClient
             connectTimeout: connectTimeout,
             receiveTimeout: receiveTimeout,
         ));
+        _applyProxy();
+    }
+
+    /// 将代理设置到底层 io.HttpClient
+    void _applyProxy()
+    {
+        if (proxyUrl == null || proxyUrl!.isEmpty) return;
+        final adapter = _dio.httpClientAdapter;
+        if (adapter is IOHttpClientAdapter)
+        {
+            adapter.createHttpClient = ()
+            {
+                final client = io.HttpClient();
+                // findProxy: 所有请求都走代理
+                client.findProxy = (uri) => 'PROXY $proxyUrl';
+                // 跳过代理身份认证弹窗
+                client.badCertificateCallback = (cert, host, port) => true;
+                return client;
+            };
+        }
     }
 
     /// GET 请求

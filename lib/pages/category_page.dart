@@ -205,6 +205,7 @@ class _CategoryPageState extends ConsumerState<CategoryPage>
                 {
                     final album = state.results[index];
                     return AlbumCard(
+                        key: ValueKey(album.id),
                         album: album,
                         onTap: () => context.push('/album/${album.id}'),
                     );

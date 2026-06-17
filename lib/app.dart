@@ -17,7 +17,7 @@ class App extends ConsumerWidget
             final router = ref.watch(routerProvider);
 
             return MaterialApp.router(
-                title: 'JMComic',
+                title: '七星天堂',
                 debugShowCheckedModeBanner: false,
                 theme: AppTheme.darkTheme,
                 routerConfig: router,

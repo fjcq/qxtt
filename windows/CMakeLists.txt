@@ -4,6 +4,8 @@ project(jmcomic_mobile LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
+# 注意：CMake target name 必须为 ASCII 标识符，不能使用中文。应用显示名（七星天堂）
+# 由 main.cpp 中的窗口标题 / AppUserModelID 决定，与 BINARY_NAME 无关。
 set(BINARY_NAME "jmcomic_mobile")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent

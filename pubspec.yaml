@@ -17,6 +17,7 @@ dependencies:
 
   # 网络
   dio: ^5.4.0
+  http: ^1.2.0
 
   # 加密
   crypto: ^3.0.3
@@ -28,7 +29,9 @@ dependencies:
 
   # 图片
   cached_network_image: ^3.3.0
+  flutter_cache_manager: ^3.3.0
   photo_view: ^0.15.0
+  image: ^4.2.0
 
   # UI 组件
   shimmer: ^3.0.0

@@ -46,8 +46,11 @@ class TaskDao
         try
         {
             final file = File(await _getFilePath());
+            // 显式创建父目录，避免在 Windows 首次运行时因
+            // getApplicationSupportDirectory 返回的子目录尚未创建而写入失败
+            await file.parent.create(recursive: true);
             final jsonList = _tasks.map((t) => _toJson(t)).toList();
-            await file.writeAsString(jsonEncode(jsonList));
+            await file.writeAsString(jsonEncode(jsonList), flush: true);
         }
         catch (_)
         {
@@ -62,6 +65,7 @@ class TaskDao
             'taskId': task.taskId,
             'taskType': task.taskType,
             'jmId': task.jmId,
+            'albumId': task.albumId,
             'status': task.status,
             'message': task.message,
             'createdAt': task.createdAt,
@@ -71,16 +75,29 @@ class TaskDao
             'totalImages': task.totalImages,
             'title': task.title,
             'coverPath': task.coverPath,
+            'firstPhotoId': task.firstPhotoId,
+            // 持久化已下载章节列表，应用重启后可恢复 library
+            'downloadedPhotoIds': task.downloadedPhotoIds,
+            // 持久化 album 元信息，用于应用重启后补全 library 显示
+            'coverAuthor': task.coverAuthor,
+            'coverPageCount': task.coverPageCount,
+            'coverEpisodeCount': task.coverEpisodeCount,
+            'localPath': task.localPath,
         };
     }
 
     /// JSON转模型
     DownloadTaskModel _fromJson(Map<String, dynamic> json)
     {
+        // albumId 在旧数据中可能缺失：album 任务时回退到 jmId
+        final jmId = json['jmId']?.toString() ?? '';
+        final taskType = json['taskType']?.toString() ?? 'album';
+        final albumId = json['albumId']?.toString() ?? jmId;
         return DownloadTaskModel()
             ..taskId = json['taskId']?.toString() ?? ''
-            ..taskType = json['taskType']?.toString() ?? 'album'
-            ..jmId = json['jmId']?.toString() ?? ''
+            ..taskType = taskType
+            ..jmId = jmId
+            ..albumId = albumId
             ..status = json['status']?.toString() ?? 'pending'
             ..message = json['message']?.toString() ?? ''
             ..createdAt = json['createdAt']?.toString() ?? ''
@@ -89,7 +106,32 @@ class TaskDao
             ..currentImage = (json['currentImage'] as num?)?.toInt() ?? 0
             ..totalImages = (json['totalImages'] as num?)?.toInt() ?? 0
             ..title = json['title']?.toString()
-            ..coverPath = json['coverPath']?.toString();
+            ..coverPath = json['coverPath']?.toString()
+            ..firstPhotoId = json['firstPhotoId']?.toString()
+            // 恢复已下载章节列表（兼容旧数据缺失的情况）
+            ..downloadedPhotoIds = (json['downloadedPhotoIds'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                const <String>[]
+            // 恢复 album 元信息（兼容旧数据缺失的情况）
+            ..coverAuthor = json['coverAuthor']?.toString() ?? ''
+            ..coverPageCount = (json['coverPageCount'] as num?)?.toInt() ?? 0
+            ..coverEpisodeCount =
+                (json['coverEpisodeCount'] as num?)?.toInt() ?? 0
+            ..localPath = json['localPath']?.toString() ?? '';
+    }
+
+    /// 更新 firstPhotoId（album 任务下载完成后调用）
+    Future<void> updateFirstPhotoId(String taskId, String firstPhotoId) async
+    {
+        await _ensureLoaded();
+        final task = _tasks.where((t) => t.taskId == taskId).firstOrNull;
+        if (task != null)
+        {
+            task.firstPhotoId = firstPhotoId;
+            task.updatedAt = DateTime.now().toIso8601String();
+            await _save();
+        }
     }
 
     /// 创建下载任务

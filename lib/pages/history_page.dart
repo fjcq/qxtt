@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/browse_history_provider.dart';
 import '../data/database/browse_history_dao.dart';
+import '../core/jm/jm_image.dart';
 import '../theme/app_colors.dart';
 import '../widgets/loading_widget.dart';
 
@@ -120,7 +121,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                         child: item.coverUrl.isNotEmpty
                             ? CachedNetworkImage(
                                 imageUrl: item.coverUrl,
-                                httpHeaders: const {'Referer': 'https://jmcomic1.bet'},
+                                cacheManager: JmImageCacheManager.instance,
                                 fit: BoxFit.cover,
                                 placeholder: (_, __) => Container(
                                     color: AppColors.surfaceVariant,

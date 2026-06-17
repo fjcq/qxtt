@@ -2,34 +2,45 @@
 class DownloadTaskModel
 {
     /// 任务唯一 ID
-    late String taskId;
+    String taskId = '';
 
     /// 任务类型: "album" | "photo"
-    late String taskType;
+    String taskType = '';
 
     /// 禁漫 ID
-    late String jmId;
+    /// - taskType=='album' 时为 albumId
+    /// - taskType=='photo' 时为 photoId
+    String jmId = '';
+
+    /// 所属本子 ID
+    /// - taskType=='album' 时等于 jmId
+    /// - taskType=='photo' 时为父本子 ID
+    String albumId = '';
+
+    /// 已下载的章节 photoId 列表（任务完成后由服务填充）
+    /// 仅在内存中传递，不持久化
+    List<String> downloadedPhotoIds = const [];
 
     /// 任务状态: "pending" | "running" | "completed" | "failed" | "cancelled"
-    late String status;
+    String status = 'pending';
 
     /// 状态消息
-    late String message;
+    String message = '';
 
     /// 创建时间
-    late String createdAt;
+    String createdAt = '';
 
     /// 更新时间
-    late String updatedAt;
+    String updatedAt = '';
 
     /// 下载进度 0.0 ~ 1.0
-    late double progress;
+    double progress = 0.0;
 
     /// 当前已下载图片数
-    late int currentImage;
+    int currentImage = 0;
 
     /// 总图片数
-    late int totalImages;
+    int totalImages = 0;
 
     /// 漫画标题
     String? title;
@@ -37,6 +48,25 @@ class DownloadTaskModel
     /// 封面路径
     String? coverPath;
 
+    /// 第一话 photoId（album 任务下载完成后填入）
+    String? firstPhotoId;
+
     /// 下载速度（仅运行时使用，不持久化）
     String speed = '';
+
+    // === 以下字段用于在完成时携带 album 元信息，供 library 显示 ===
+    // 字段名复用"cover"前缀仅表示与已下载封面展示相关的元数据，
+    // 不影响原有 coverPath 字段语义（coverPath 是本地封面文件路径）。
+
+    /// 本子作者（仅 album 任务）
+    String coverAuthor = '';
+
+    /// 本子页数（仅 album 任务）
+    int coverPageCount = 0;
+
+    /// 本子章节数（仅 album 任务）
+    int coverEpisodeCount = 0;
+
+    /// 本子本地下载根目录（仅 album 任务）
+    String localPath = '';
 }

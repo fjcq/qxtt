@@ -13,25 +13,30 @@ class JmConfig
     static const int scramble268850 = 268850;
     static const int scramble421926 = 421926;
 
-    // 图片 CDN 域名
+    // 图片 CDN 域名（JM 官方代理域名，国内可访问）
     static const List<String> domainImageList = [
-        'cdn-msp.18comic.vip',
-        'cdn-msp.18comic.cc',
+        'cdn-msp.jmapiproxy1.cc',
+        'cdn-msp.jmapiproxy2.cc',
+        'cdn-msp2.jmapiproxy2.cc',
+        'cdn-msp3.jmapiproxy2.cc',
+        'cdn-msp.jmapinodeudzn.net',
+        'cdn-msp3.jmapinodeudzn.net',
     ];
 
     // API 域名（会从域名服务器自动更新）
     static const List<String> domainApiList = [
-        'www.cdnhjk.net',
-        'www.cdngwc.cc',
-        'www.cdngwc.net',
-        'www.cdngwc.club',
-        'www.cdnutc.me',
+        'www.cdnaspa.club',
+        'www.cdnaspa.vip',
+        'www.cdnplaystation6.cc',
+        'www.cdnplaystation6.vip',
     ];
 
-    // 域名服务器
+    // 域名服务器（参考 Python 版：3 个源，按 shuffled 顺序尝试）
+    // tos-cn-beijing 源主要服务国内网络，可作为其他两个源不可达时的备选
     static const List<String> apiUrlDomainServerList = [
         'https://rup4a04-c01.tos-ap-southeast-1.bytepluses.com/newsvr-2025.txt',
         'https://rup4a04-c02.tos-cn-hongkong.bytepluses.com/newsvr-2025.txt',
+        'https://rup4a04-c03.tos-cn-beijing.bytepluses.com.cn/newsvr-2025.txt',
     ];
 
     // 分页大小
@@ -47,8 +52,10 @@ class JmConfig
 
     // 图片请求头
     static Map<String, String> get appHeadersImage => {
-        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-        'Referer': 'https://www.cdnhjk.net/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'X-Requested-With': 'com.JMComic3.app',
+        'Referer': 'https://${domainApiList.first}/',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
     };
 
     // 默认下载线程数

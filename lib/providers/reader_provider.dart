@@ -3,19 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/jm/jm_client.dart';
 import 'search_provider.dart';
 
-/// 阅读器模式
-enum ReaderMode
-{
-    /// 纵向滚动
-    vertical,
-
-    /// 横向翻页
-    horizontal,
-
-    /// Webtoon 长条滚动
-    webtoon,
-}
-
 /// 阅读器状态
 class ReaderState
 {
@@ -27,9 +14,6 @@ class ReaderState
 
     /// 当前页码
     final int currentPage;
-
-    /// 阅读模式
-    final ReaderMode mode;
 
     /// 是否正在加载
     final bool isLoading;
@@ -47,7 +31,6 @@ class ReaderState
         required this.photoId,
         this.imageUrls = const [],
         this.currentPage = 0,
-        this.mode = ReaderMode.vertical,
         this.isLoading = false,
         this.showControls = false,
         this.error,
@@ -57,7 +40,6 @@ class ReaderState
     ReaderState copyWith({
         List<String>? imageUrls,
         int? currentPage,
-        ReaderMode? mode,
         bool? isLoading,
         bool? showControls,
         String? error,
@@ -68,7 +50,6 @@ class ReaderState
             photoId: photoId,
             imageUrls: imageUrls ?? this.imageUrls,
             currentPage: currentPage ?? this.currentPage,
-            mode: mode ?? this.mode,
             isLoading: isLoading ?? this.isLoading,
             showControls: showControls ?? this.showControls,
             error: error,
@@ -141,21 +122,6 @@ class ReaderNotifier extends StateNotifier<ReaderState>
         {
             state = state.copyWith(currentPage: state.currentPage - 1);
         }
-    }
-
-    /// 切换阅读模式
-    void toggleMode()
-    {
-        const modes = ReaderMode.values;
-        final currentIndex = modes.indexOf(state.mode);
-        final nextIndex = (currentIndex + 1) % modes.length;
-        state = state.copyWith(mode: modes[nextIndex]);
-    }
-
-    /// 设置阅读模式
-    void setMode(ReaderMode mode)
-    {
-        state = state.copyWith(mode: mode);
     }
 
     /// 切换控制栏显示

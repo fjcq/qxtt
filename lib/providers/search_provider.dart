@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/jm/jm_client.dart';
 import '../core/jm/jm_entity.dart';
+import '../core/jm/jm_image.dart';
 import '../data/database/app_database.dart';
 import '../data/database/task_dao.dart';
 import '../data/database/library_dao.dart';
 import '../data/database/search_history_dao.dart';
+import 'config_provider.dart';
 
 /// 数据库 Provider
 final appDatabaseProvider = Provider<AppDatabase>((ref)
@@ -18,9 +20,26 @@ final appDatabaseProvider = Provider<AppDatabase>((ref)
 });
 
 /// JmClient Provider
+/// 监听 configProvider 的代理配置，配置变更时自动重建客户端
 final jmClientProvider = Provider<JmClient>((ref)
 {
-    return JmClient();
+    final config = ref.watch(configProvider).config;
+    final proxyUrl = config.useProxy && config.proxyUrl.isNotEmpty
+        ? config.proxyUrl
+        : null;
+    final client = JmClient(
+        proxyUrl: proxyUrl,
+        useProxy: config.useProxy,
+    );
+    // 同步重置图片缓存管理器（让它下次访问时使用新代理 + 新域名列表）
+    // imageDomainProvider 用闭包延迟获取 client.imageDomainList，
+    // 保证 JmClient.updateApiDomains() 自动更新后缓存管理器能立即看到
+    JmImageCacheManager.reset(
+        proxyUrl: proxyUrl,
+        imageDomainProvider: () => client.imageDomainList,
+    );
+    ref.onDispose(() async => client.dio.close(force: true));
+    return client;
 });
 
 /// TaskDao Provider

@@ -15,11 +15,16 @@ class EpisodeList extends StatelessWidget
     /// 阅读章节回调
     final ValueChanged<Episode>? onRead;
 
+    /// 已下载章节的 photoId 集合
+    /// 出现在此集合中的章节将不显示下载按钮（已下载）
+    final Set<String>? downloadedPhotoIds;
+
     const EpisodeList({
         super.key,
         required this.episodes,
         this.onDownload,
         this.onRead,
+        this.downloadedPhotoIds,
     });
 
     @override
@@ -52,6 +57,7 @@ class EpisodeList extends StatelessWidget
             itemBuilder: (context, index)
             {
                 final episode = episodes[index];
+                final isDownloaded = downloadedPhotoIds?.contains(episode.photoId) ?? false;
                 return ListTile(
                     dense: true,
                     contentPadding: const EdgeInsets.symmetric(
@@ -81,6 +87,16 @@ class EpisodeList extends StatelessWidget
                     trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                            // 已下载标识
+                            if (isDownloaded)
+                                const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 4),
+                                    child: Icon(
+                                        Icons.check_circle,
+                                        size: 18,
+                                        color: AppColors.success,
+                                    ),
+                                ),
                             // 阅读按钮
                             if (onRead != null)
                                 IconButton(
@@ -92,8 +108,8 @@ class EpisodeList extends StatelessWidget
                                     onPressed: () => onRead!(episode),
                                     tooltip: '阅读',
                                 ),
-                            // 下载按钮
-                            if (onDownload != null)
+                            // 下载按钮：已下载则不显示，避免重复下载
+                            if (onDownload != null && !isDownloaded)
                                 IconButton(
                                     icon: const Icon(
                                         Icons.download_outlined,
