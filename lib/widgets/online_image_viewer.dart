@@ -29,6 +29,9 @@ class OnlineImageViewer extends StatefulWidget
     /// JmImageLoader 实例
     final JmImageLoader loader;
 
+    /// 全局缩放比例（默认1.0，由阅读器传入）
+    final double scale;
+
     const OnlineImageViewer({
         super.key,
         required this.photoId,
@@ -37,6 +40,7 @@ class OnlineImageViewer extends StatefulWidget
         required this.aid,
         required this.loader,
         this.localFilePath,
+        this.scale = 1.0,
     });
 
     @override
@@ -167,20 +171,19 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
         return _buildLoading();
     }
 
-    /// 已加载图片（按原比例完整显示，撑满设备宽度）
-    /// 关键：用 LayoutBuilder 拿到父容器实际宽度，强制 Image.width = 父容器宽度
-    /// 这样 RenderImage._imageSize = (parentWidth, parentWidth * h/w)
-    /// layout size 高度 = parentWidth * h/w（按比例），图片高度 = layout 高度（无空白）
-    /// 而不是 Image(width: null) 导致 _imageSize=原图尺寸、layout 高度=原图高度（可能比显示高度大很多）
+    /// 已加载图片（按原比例完整显示，撑满设备宽度 × scale）
+    /// scale > 1 时图片放大，允许横向滚动查看；scale < 1 时图片缩小
     Widget _buildLoadedImage()
     {
         return LayoutBuilder(
-            builder: (context, constraints) {
+            builder: (context, constraints)
+            {
+                final displayWidth = constraints.maxWidth * widget.scale;
                 return ColoredBox(
                     color: Colors.black,
                     child: Image.memory(
                         _bytes!,
-                        width: constraints.maxWidth,
+                        width: displayWidth,
                         fit: BoxFit.contain,
                         gaplessPlayback: true,
                         errorBuilder: (context, error, stackTrace) => _buildError(),

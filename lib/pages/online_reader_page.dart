@@ -84,8 +84,11 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     AnimationController? _inertiaController;
     Animation<double>? _inertiaAnimation;
 
-    /// 每张图片的缩放状态（index -> scale）
-    final Map<int, double> _imageScales = {};
+    /// 全局缩放比例（移动端双指缩放，影响所有图片）
+    double _globalScale = 1.0;
+
+    /// 上次缩放基准（用于计算增量）
+    double _previousScale = 1.0;
 
     /// 是否为桌面平台
     bool get _isDesktop =>
@@ -226,7 +229,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             _photoDetail = null;
             _scrambleId = 0;
             _currentPage = 0;
-            _imageScales.clear();
         });
 
         final client = ref.read(jmClientProvider);
@@ -610,6 +612,11 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                     onPointerUp: _onPointerUp,
                     child: GestureDetector(
                         onTap: () => setState(() => _showControls = !_showControls),
+                        // 移动端全局双指缩放
+                        onScaleStart: _isDesktop ? null : _onScaleStart,
+                        onScaleUpdate: _isDesktop ? null : _onScaleUpdate,
+                        onScaleEnd: _isDesktop ? null : _onScaleEnd,
+                        onDoubleTap: _isDesktop ? null : _onDoubleTapScale,
                         child: Stack(
                             children: [
                                 _buildContent(),
@@ -686,7 +693,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         return _buildVerticalScroll(pages);
     }
 
-    /// 构造单图 Widget（带缩放支持）
+    /// 构造单图 Widget（全局缩放通过调整图片宽度实现）
     Widget _buildImageForIndex(int index, List<String> pages)
     {
         final client = ref.watch(jmClientProvider);
@@ -694,7 +701,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         final aid = int.tryParse(widget.photoId) ?? 0;
         final localPath = _findLocalPath(index);
 
-        final imageWidget = OnlineImageViewer(
+        return OnlineImageViewer(
             key: ValueKey('${widget.photoId}_$index'),
             photoId: widget.photoId,
             filename: pages[index],
@@ -702,18 +709,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             aid: aid,
             loader: loader,
             localFilePath: localPath,
-        );
-
-        // 移动端：使用 InteractiveViewer 支持双指缩放
-        // PC端：不需要 InteractiveViewer，窗口大小调整即可控制缩放
-        if (_isDesktop)
-        {
-            return imageWidget;
-        }
-
-        return _ZoomableImage(
-            key: ValueKey('zoom_${widget.photoId}_$index'),
-            child: imageWidget,
+            scale: _globalScale,
         );
     }
 
@@ -1101,107 +1097,41 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             },
         );
     }
-}
 
-/// 可缩放图片组件（移动端双指缩放）
-/// 缩放时阻止父级 ListView 滚动，未缩放时允许正常滚动
-class _ZoomableImage extends StatefulWidget
-{
-    /// 子组件
-    final Widget child;
+    // ===== 移动端全局缩放 =====
 
-    const _ZoomableImage({
-        super.key,
-        required this.child,
-    });
-
-    @override
-    State<_ZoomableImage> createState() => _ZoomableImageState();
-}
-
-class _ZoomableImageState extends State<_ZoomableImage>
-{
-    /// 当前缩放比例
-    double _scale = 1.0;
-
-    /// 上次缩放比例（用于计算增量）
-    double _previousScale = 1.0;
-
-    /// 水平平移
-    double _panX = 0;
-
-    /// 垂直平移
-    double _panY = 0;
-
-    /// 是否正在缩放
-    bool get _isZoomed => _scale > 1.05;
-
-    @override
-    Widget build(BuildContext context)
+    /// 双指缩放开始
+    void _onScaleStart(ScaleStartDetails details)
     {
-        return GestureDetector(
-            // 双指缩放
-            onScaleStart: (details)
-            {
-                _previousScale = _scale;
-            },
-            onScaleUpdate: (details)
-            {
-                setState(()
-                {
-                    _scale = (_previousScale * details.scale).clamp(1.0, 5.0);
+        _previousScale = _globalScale;
+    }
 
-                    // 缩放时允许平移
-                    if (_isZoomed)
-                    {
-                        _panX += details.focalPointDelta.dx;
-                        _panY += details.focalPointDelta.dy;
-                    }
-                    else
-                    {
-                        _panX = 0;
-                        _panY = 0;
-                    }
-                });
-            },
-            onScaleEnd: (details)
-            {
-                if (!_isZoomed)
-                {
-                    setState(()
-                    {
-                        _scale = 1.0;
-                        _panX = 0;
-                        _panY = 0;
-                    });
-                }
-            },
-            // 双击恢复原始大小
-            onDoubleTap: ()
-            {
-                setState(()
-                {
-                    if (_isZoomed)
-                    {
-                        _scale = 1.0;
-                        _panX = 0;
-                        _panY = 0;
-                    }
-                    else
-                    {
-                        _scale = 2.0;
-                    }
-                });
-            },
-            child: ClipRect(
-                child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                        ..translateByDouble(_panX, _panY, 0.0, 1.0)
-                        ..scaleByDouble(_scale, _scale, 1.0, 1.0),
-                    child: widget.child,
-                ),
-            ),
-        );
+    /// 双指缩放更新
+    void _onScaleUpdate(ScaleUpdateDetails details)
+    {
+        final newScale = (_previousScale * details.scale).clamp(0.5, 5.0);
+        if (newScale != _globalScale)
+        {
+            setState(() => _globalScale = newScale);
+        }
+    }
+
+    /// 双指缩放结束
+    void _onScaleEnd(ScaleEndDetails details)
+    {
+        // 缩放比例过小时恢复为1
+        if (_globalScale < 0.6)
+        {
+            setState(() => _globalScale = 1.0);
+        }
+    }
+
+    /// 双击切换缩放（1x ↔ 2x）
+    void _onDoubleTapScale()
+    {
+        setState(()
+        {
+            _globalScale = _globalScale > 1.5 ? 1.0 : 2.0;
+        });
     }
 }

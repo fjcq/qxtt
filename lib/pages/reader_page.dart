@@ -51,6 +51,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     /// 当前估算页码
     int _estimatedPage = 0;
 
+    /// 全局缩放比例（移动端双指缩放，影响所有图片）
+    double _globalScale = 1.0;
+
+    /// 上次缩放基准（用于计算增量）
+    double _previousScale = 1.0;
+
     /// 是否为桌面平台
     bool get _isDesktop =>
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -266,6 +272,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         onTap: () =>
                             ref.read(readerProvider(widget.photoId).notifier)
                                 .toggleControls(),
+                        // 移动端全局双指缩放
+                        onScaleStart: _isDesktop ? null : _onScaleStart,
+                        onScaleUpdate: _isDesktop ? null : _onScaleUpdate,
+                        onScaleEnd: _isDesktop ? null : _onScaleEnd,
+                        onDoubleTap: _isDesktop ? null : _onDoubleTapScale,
                         child: Stack(
                             children: [
                                 _buildContent(state),
@@ -325,16 +336,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         );
     }
 
-    /// 构建单张图片（带缩放支持）
+    /// 构建单张图片（全局缩放通过调整图片宽度实现）
     Widget _buildImageItem(String url, int index)
     {
-        final imageWidget = LayoutBuilder(
+        return LayoutBuilder(
             builder: (context, constraints)
             {
+                final displayWidth = constraints.maxWidth * _globalScale;
                 return CachedNetworkImage(
                     imageUrl: url,
                     cacheManager: JmImageCacheManager.instance,
-                    width: constraints.maxWidth,
+                    width: displayWidth,
                     fit: BoxFit.contain,
                     placeholder: (context, url) => Container(
                         color: AppColors.surface,
@@ -353,17 +365,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     ),
                 );
             },
-        );
-
-        // 移动端支持双指缩放
-        if (_isDesktop)
-        {
-            return imageWidget;
-        }
-
-        return _ZoomableImage(
-            key: ValueKey('zoom_$index'),
-            child: imageWidget,
         );
     }
 
@@ -538,103 +539,41 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             curve: Curves.easeOutCubic,
         );
     }
-}
 
-/// 可缩放图片组件（移动端双指缩放）
-class _ZoomableImage extends StatefulWidget
-{
-    /// 子组件
-    final Widget child;
+    // ===== 移动端全局缩放 =====
 
-    const _ZoomableImage({
-        super.key,
-        required this.child,
-    });
-
-    @override
-    State<_ZoomableImage> createState() => _ZoomableImageState();
-}
-
-class _ZoomableImageState extends State<_ZoomableImage>
-{
-    /// 当前缩放比例
-    double _scale = 1.0;
-
-    /// 上次缩放比例
-    double _previousScale = 1.0;
-
-    /// 水平平移
-    double _panX = 0;
-
-    /// 垂直平移
-    double _panY = 0;
-
-    /// 是否正在缩放
-    bool get _isZoomed => _scale > 1.05;
-
-    @override
-    Widget build(BuildContext context)
+    /// 双指缩放开始
+    void _onScaleStart(ScaleStartDetails details)
     {
-        return GestureDetector(
-            onScaleStart: (details)
-            {
-                _previousScale = _scale;
-            },
-            onScaleUpdate: (details)
-            {
-                setState(()
-                {
-                    _scale = (_previousScale * details.scale).clamp(1.0, 5.0);
+        _previousScale = _globalScale;
+    }
 
-                    if (_isZoomed)
-                    {
-                        _panX += details.focalPointDelta.dx;
-                        _panY += details.focalPointDelta.dy;
-                    }
-                    else
-                    {
-                        _panX = 0;
-                        _panY = 0;
-                    }
-                });
-            },
-            onScaleEnd: (details)
-            {
-                if (!_isZoomed)
-                {
-                    setState(()
-                    {
-                        _scale = 1.0;
-                        _panX = 0;
-                        _panY = 0;
-                    });
-                }
-            },
-            onDoubleTap: ()
-            {
-                setState(()
-                {
-                    if (_isZoomed)
-                    {
-                        _scale = 1.0;
-                        _panX = 0;
-                        _panY = 0;
-                    }
-                    else
-                    {
-                        _scale = 2.0;
-                    }
-                });
-            },
-            child: ClipRect(
-                child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                        ..translateByDouble(_panX, _panY, 0.0, 1.0)
-                        ..scaleByDouble(_scale, _scale, 1.0, 1.0),
-                    child: widget.child,
-                ),
-            ),
-        );
+    /// 双指缩放更新
+    void _onScaleUpdate(ScaleUpdateDetails details)
+    {
+        final newScale = (_previousScale * details.scale).clamp(0.5, 5.0);
+        if (newScale != _globalScale)
+        {
+            setState(() => _globalScale = newScale);
+        }
+    }
+
+    /// 双指缩放结束
+    void _onScaleEnd(ScaleEndDetails details)
+    {
+        // 缩放比例过小时恢复为1
+        if (_globalScale < 0.6)
+        {
+            setState(() => _globalScale = 1.0);
+        }
+    }
+
+    /// 双击切换缩放（1x ↔ 2x）
+    void _onDoubleTapScale()
+    {
+        setState(()
+        {
+            _globalScale = _globalScale > 1.5 ? 1.0 : 2.0;
+        });
     }
 }
