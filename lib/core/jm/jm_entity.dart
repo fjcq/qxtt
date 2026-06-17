@@ -177,13 +177,26 @@ class AlbumDetail
 
     factory AlbumDetail.fromJson(Map<String, dynamic> json)
     {
-        final episodeList =
+        final albumId = json['id']?.toString() ?? '';
+        final name = json['name']?.toString() ?? '';
+
+        var episodeList =
             (json['series'] as List<dynamic>? ?? [])
                 .map((e) => Episode.fromJson(e as Map<String, dynamic>))
                 .toList();
 
+        // 对齐 Python jm_entity.py JmAlbumDetail.__init__ 的逻辑:
+        // 有的 album 没有章节（series 为空, series_id=="0"），则自成一章。
+        // 此时用 albumId 作为 photoId, "1" 作为序号, album 名称作为章节名。
+        // 否则单本/短篇类漫画详情页将看不到章节列表, 无法阅读或下载。
+        if (episodeList.isEmpty)
+        {
+            episodeList = [
+                Episode(photoId: albumId, index: '1', name: name),
+            ];
+        }
+
         // 封面 URL：image 为空时根据 id 拼接
-        final albumId = json['id']?.toString() ?? '';
         final imageField = json['image']?.toString() ?? json['cover']?.toString() ?? '';
         final coverUrl = imageField.isNotEmpty
             ? imageField
@@ -246,9 +259,14 @@ class Episode
 
     factory Episode.fromJson(Map<String, dynamic> json)
     {
+        // 对齐 Python jm_toolkit.py JmAdapter.post_adapt_album:
+        //   episode_list.append((chapter.id, chapter.sort, chapter.name))
+        // JM API 返回的 series 元素字段为 id / sort / name, 而非 index。
+        // 之前误用 json['index'] 会始终得到空字符串, 导致序号显示空白。
+        final index = json['sort']?.toString() ?? json['index']?.toString() ?? '';
         return Episode(
             photoId: json['id']?.toString() ?? '',
-            index: json['index']?.toString() ?? '',
+            index: index,
             name: json['name']?.toString() ?? '',
         );
     }
