@@ -37,6 +37,9 @@ class LibraryAlbumModel
     /// 最后阅读页码
     int lastReadPage = 0;
 
+    /// 最后阅读的章节 photoId
+    String lastReadPhotoId = '';
+
     /// 本地占用空间（字节），0 表示未知
     int sizeBytes = 0;
 

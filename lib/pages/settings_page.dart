@@ -62,6 +62,13 @@ class SettingsPage extends ConsumerWidget
                             context, ref, 'imageThreadCount', config.imageThreadCount,
                         ),
                     ),
+                    ListTile(
+                        leading: const Icon(Icons.cached, color: AppColors.accent),
+                        title: const Text('预加载页数'),
+                        subtitle: Text('${config.preloadPageCount}'),
+                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        onTap: () => _showPreloadPageCountPicker(context, ref, config),
+                    ),
 
                     // ===== 网络设置 =====
                     _buildSectionHeader('网络设置'),
@@ -315,6 +322,39 @@ class SettingsPage extends ConsumerWidget
                             children: [
                                 Text(_getReaderModeLabel(mode)),
                                 if (mode == config.readerMode)
+                                    const Icon(Icons.check, color: AppColors.accent, size: 20),
+                            ],
+                        ),
+                    ),
+                ).toList(),
+            ),
+        );
+    }
+
+    /// 显示预加载页数选择器
+    void _showPreloadPageCountPicker(
+        BuildContext context,
+        WidgetRef ref,
+        AppConfigModel config,
+    )
+    {
+        showDialog(
+            context: context,
+            builder: (context) => SimpleDialog(
+                title: const Text('预加载页数'),
+                children: [0, 1, 2, 3, 4, 5].map((count) =>
+                    SimpleDialogOption(
+                        onPressed: ()
+                        {
+                            ref.read(configProvider.notifier)
+                                .updatePreloadPageCount(count);
+                            Navigator.pop(context);
+                        },
+                        child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                                Text(count == 0 ? '关闭' : '前后各 $count 页'),
+                                if (count == config.preloadPageCount)
                                     const Icon(Icons.check, color: AppColors.accent, size: 20),
                             ],
                         ),

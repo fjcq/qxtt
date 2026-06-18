@@ -196,6 +196,19 @@ class AlbumDetail
             ];
         }
 
+        // 当前 API 响应中不再包含 episode_count 字段，需根据实际章节列表计算。
+        // 若后续 API 恢复该字段，优先使用接口值作为兼容。
+        var episodeCount = episodeList.length;
+        final ecRaw = json['episode_count'];
+        if (ecRaw is int)
+        {
+            episodeCount = ecRaw;
+        }
+        else if (ecRaw != null)
+        {
+            episodeCount = int.tryParse(ecRaw.toString()) ?? episodeList.length;
+        }
+
         // 封面 URL：image 为空时根据 id 拼接
         final imageField = json['image']?.toString() ?? json['cover']?.toString() ?? '';
         final coverUrl = imageField.isNotEmpty
@@ -228,7 +241,7 @@ class AlbumDetail
                     .toList() ??
                 [],
             pageCount: pageCount,
-            episodeCount: json['episode_count'] as int? ?? 0,
+            episodeCount: episodeCount,
             episodes: episodeList,
             pubDate: json['pub_date']?.toString() ?? '',
             views: json['views']?.toString() ?? '',
@@ -304,9 +317,18 @@ class PhotoDetail
 
     factory PhotoDetail.fromJson(Map<String, dynamic> json)
     {
+        final photoId = json['id']?.toString() ?? '';
+        // 对齐 Python jm_entity.py JmPhotoDetail.album_id:
+        //   series_id == 0 (单本) → album_id = photo_id
+        //   series_id != 0         → album_id = str(series_id)
+        // API 可能返回 aid 或 series_id，优先使用 series_id
+        final seriesIdRaw = json['series_id']?.toString() ?? json['aid']?.toString() ?? '0';
+        final seriesId = int.tryParse(seriesIdRaw) ?? 0;
+        final albumId = seriesId == 0 ? photoId : seriesIdRaw;
+
         return PhotoDetail(
-            photoId: json['id']?.toString() ?? '',
-            albumId: json['aid']?.toString() ?? '',
+            photoId: photoId,
+            albumId: albumId,
             name: json['name']?.toString() ?? '',
             pageArr: (json['images'] as List<dynamic>?)
                     ?.map((e) => e.toString())

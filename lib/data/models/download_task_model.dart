@@ -17,6 +17,15 @@ class DownloadTaskModel
     /// - taskType=='photo' 时为父本子 ID
     String albumId = '';
 
+    /// 本子标题（用于构建本地目录）
+    String albumTitle = '';
+
+    /// 章节序号（单章任务）
+    String episodeIndex = '';
+
+    /// 章节名称（单章任务）
+    String episodeName = '';
+
     /// 已下载的章节 photoId 列表（任务完成后由服务填充）
     /// 仅在内存中传递，不持久化
     List<String> downloadedPhotoIds = const [];

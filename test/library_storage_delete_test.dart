@@ -49,7 +49,7 @@ void main()
         final albumDir =
             '${tmpRoot.path}${Platform.pathSeparator}myAlbum';
         await Directory(albumDir).create(recursive: true);
-        await File('${albumDir}${Platform.pathSeparator}page.jpg')
+        await File('$albumDir${Platform.pathSeparator}page.jpg')
             .writeAsBytes([1, 2, 3]);
 
         final album = makeAlbum(localPath: albumDir);
@@ -63,11 +63,11 @@ void main()
 
     test('按 title 兜底命中', () async
     {
-        final safe = 'Hello World';
+        const safe = 'Hello World';
         final albumDir =
             '${tmpRoot.path}${Platform.pathSeparator}$safe';
         await Directory(albumDir).create(recursive: true);
-        await File('${albumDir}${Platform.pathSeparator}page.jpg')
+        await File('$albumDir${Platform.pathSeparator}page.jpg')
             .writeAsBytes([1, 2, 3]);
 
         final album = makeAlbum();
@@ -84,7 +84,7 @@ void main()
         final albumDir =
             '${tmpRoot.path}${Platform.pathSeparator}12345';
         await Directory(albumDir).create(recursive: true);
-        await File('${albumDir}${Platform.pathSeparator}page.jpg')
+        await File('$albumDir${Platform.pathSeparator}page.jpg')
             .writeAsBytes([1, 2, 3]);
 
         final album = makeAlbum();
@@ -102,7 +102,7 @@ void main()
         final albumDir =
             '${tmpRoot.path}${Platform.pathSeparator}12345';
         await Directory(albumDir).create(recursive: true);
-        await File('${albumDir}${Platform.pathSeparator}image.jpg')
+        await File('$albumDir${Platform.pathSeparator}image.jpg')
             .writeAsBytes([1, 2, 3]);
 
         final album = LibraryAlbumModel()
@@ -132,7 +132,7 @@ void main()
         {
             final dir = '${tmpRoot.path}${Platform.pathSeparator}$id';
             await Directory(dir).create(recursive: true);
-            await File('${dir}${Platform.pathSeparator}p.jpg')
+            await File('$dir${Platform.pathSeparator}p.jpg')
                 .writeAsBytes([0]);
         }
         final albums = ['1', '2', '3']

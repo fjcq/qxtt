@@ -62,10 +62,10 @@ class _SearchPageState extends ConsumerState<SearchPage>
     {
         if (query.trim().isEmpty) return;
         _searchFocusNode.unfocus();
-        final type = kSearchTypeMap[_searchTypeLabels[_currentTypeIndex]] ?? 'site';
+        final mainTag = kSearchTypeMap[_searchTypeLabels[_currentTypeIndex]] ?? 0;
         ref.read(searchProvider.notifier).search(
             query.trim(),
-            type: type,
+            type: mainTag,
         );
     }
 
@@ -73,8 +73,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
     void _onTypeChanged(int index)
     {
         setState(() => _currentTypeIndex = index);
-        final type = kSearchTypeMap[_searchTypeLabels[index]] ?? 'site';
-        ref.read(searchProvider.notifier).setSearchType(type);
+        final mainTag = kSearchTypeMap[_searchTypeLabels[index]] ?? 0;
+        ref.read(searchProvider.notifier).setSearchType(mainTag);
     }
 
     @override

@@ -86,6 +86,7 @@ class LibraryDao
             'addedAt': album.addedAt,
             'lastReadAt': album.lastReadAt,
             'lastReadPage': album.lastReadPage,
+            'lastReadPhotoId': album.lastReadPhotoId,
             'sizeBytes': album.sizeBytes,
             'fileCount': album.fileCount,
         };
@@ -109,6 +110,7 @@ class LibraryDao
             ..addedAt = json['addedAt']?.toString() ?? ''
             ..lastReadAt = json['lastReadAt']?.toString()
             ..lastReadPage = (json['lastReadPage'] as num?)?.toInt() ?? 0
+            ..lastReadPhotoId = json['lastReadPhotoId']?.toString() ?? ''
             ..sizeBytes = (json['sizeBytes'] as num?)?.toInt() ?? 0
             ..fileCount = (json['fileCount'] as num?)?.toInt() ?? 0;
     }
@@ -136,13 +138,21 @@ class LibraryDao
     }
 
     /// 更新阅读进度
-    Future<void> updateReadProgress(String albumId, int page) async
+    Future<void> updateReadProgress(
+        String albumId,
+        int page, {
+        String? photoId,
+    }) async
     {
         await _ensureLoaded();
         final album = _albums.where((a) => a.albumId == albumId).firstOrNull;
         if (album != null)
         {
             album.lastReadPage = page;
+            if (photoId != null && photoId.isNotEmpty)
+            {
+                album.lastReadPhotoId = photoId;
+            }
             album.lastReadAt = DateTime.now().toIso8601String();
             await _save();
         }

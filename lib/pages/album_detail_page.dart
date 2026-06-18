@@ -104,19 +104,20 @@ class AlbumDetailPage extends ConsumerWidget
 
         if (state.detail == null) return const SizedBox.shrink();
 
-        return _buildDetail(context, ref, state.detail!);
+        return _buildDetail(context, ref, state);
     }
 
     /// 构建详情内容
-    Widget _buildDetail(BuildContext context, WidgetRef ref, AlbumDetail detail)
+    Widget _buildDetail(BuildContext context, WidgetRef ref, AlbumDetailState state)
     {
+        final detail = state.detail!;
         return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                     // 封面和信息
-                    _buildInfoSection(detail, ref),
+                    _buildInfoSection(state, ref),
                     const SizedBox(height: 16),
                     // 标签
                     if (detail.tags.isNotEmpty) _buildTags(detail.tags),
@@ -133,8 +134,9 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 构建信息区域
-    Widget _buildInfoSection(AlbumDetail detail, WidgetRef ref)
+    Widget _buildInfoSection(AlbumDetailState state, WidgetRef ref)
     {
+        final detail = state.detail!;
         final client = ref.watch(jmClientProvider);
         final coverUrl = client.getAlbumCoverUrl(detail.albumId);
 
@@ -184,7 +186,12 @@ class AlbumDetailPage extends ConsumerWidget
                             ),
                             const SizedBox(height: 8),
                             _buildInfoRow('作者', detail.author),
-                            _buildInfoRow('页数', '${detail.pageCount}'),
+                            _buildInfoRow(
+                                '页数',
+                                state.isLoadingPageCount && state.displayPageCount == 0
+                                    ? '计算中...'
+                                    : '${state.displayPageCount}',
+                            ),
                             _buildInfoRow('章节', '${detail.episodeCount}'),
                             if (detail.pubDate.isNotEmpty)
                                 _buildInfoRow('日期', detail.pubDate),
@@ -354,6 +361,9 @@ class AlbumDetailPage extends ConsumerWidget
             'photo',
             episode.photoId,
             albumId: detail.albumId,
+            albumTitle: detail.name,
+            episodeIndex: episode.index,
+            episodeName: episode.name,
             title: '${detail.name} - ${episode.name}',
         );
         if (!context.mounted) return;

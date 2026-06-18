@@ -25,6 +25,12 @@ class AppConfigModel
     /// 阅读器模式: "vertical" | "horizontal" | "webtoon"
     String readerMode;
 
+    /// 阅读缓存最大大小（字节），默认 2GB
+    int readerCacheMaxSizeBytes;
+
+    /// 在线阅读预加载页数（当前页前后各 N 页）
+    int preloadPageCount;
+
     AppConfigModel({
         this.downloadDir = '',
         this.imageThreadCount = 5,
@@ -34,6 +40,8 @@ class AppConfigModel
         this.useProxy = false,
         this.themeMode = 'dark',
         this.readerMode = 'vertical',
+        this.readerCacheMaxSizeBytes = 2147483648,
+        this.preloadPageCount = 2,
     });
 
     /// 从 JSON 创建
@@ -48,6 +56,11 @@ class AppConfigModel
             useProxy: json['useProxy'] as bool? ?? false,
             themeMode: json['themeMode'] as String? ?? 'dark',
             readerMode: json['readerMode'] as String? ?? 'vertical',
+            readerCacheMaxSizeBytes:
+                (json['readerCacheMaxSizeBytes'] as num?)?.toInt() ??
+                2147483648,
+            preloadPageCount:
+                (json['preloadPageCount'] as num?)?.toInt() ?? 2,
         );
     }
 
@@ -63,6 +76,8 @@ class AppConfigModel
             'useProxy': useProxy,
             'themeMode': themeMode,
             'readerMode': readerMode,
+            'readerCacheMaxSizeBytes': readerCacheMaxSizeBytes,
+            'preloadPageCount': preloadPageCount,
         };
     }
 
@@ -76,6 +91,8 @@ class AppConfigModel
         bool? useProxy,
         String? themeMode,
         String? readerMode,
+        int? readerCacheMaxSizeBytes,
+        int? preloadPageCount,
     })
     {
         return AppConfigModel(
@@ -87,6 +104,9 @@ class AppConfigModel
             useProxy: useProxy ?? this.useProxy,
             themeMode: themeMode ?? this.themeMode,
             readerMode: readerMode ?? this.readerMode,
+            readerCacheMaxSizeBytes:
+                readerCacheMaxSizeBytes ?? this.readerCacheMaxSizeBytes,
+            preloadPageCount: preloadPageCount ?? this.preloadPageCount,
         );
     }
 }

@@ -63,13 +63,14 @@ final searchHistoryDaoProvider = Provider<SearchHistoryDao>((ref)
 
 // ===== 以下为手动实现的 Notifier（不使用代码生成） =====
 
-/// 搜索类型映射：显示名称 → API 参数值
+/// 搜索类型映射：显示名称 → main_tag 参数值
+/// 站内=0, 作品=1, 作者=2, 标签=3, 角色=4
 const kSearchTypeMap = {
-    '站内': 'site',
-    '作者': 'author',
-    '标签': 'tag',
-    '作品': 'work',
-    '角色': 'character',
+    '站内': 0,
+    '作品': 1,
+    '作者': 2,
+    '标签': 3,
+    '角色': 4,
 };
 
 /// 搜索状态
@@ -82,7 +83,7 @@ class SearchState
     final int totalPages;
     final int total;
     final String query;
-    final String searchType;
+    final int searchType;
     final List<SearchHistoryModel> history;
 
     const SearchState({
@@ -93,7 +94,7 @@ class SearchState
         this.totalPages = 0,
         this.total = 0,
         this.query = '',
-        this.searchType = 'site',
+        this.searchType = 0,
         this.history = const [],
     });
 
@@ -105,7 +106,7 @@ class SearchState
         int? totalPages,
         int? total,
         String? query,
-        String? searchType,
+        int? searchType,
         List<SearchHistoryModel>? history,
     })
     {
@@ -142,7 +143,7 @@ class SearchNotifier extends StateNotifier<SearchState>
     }
 
     /// 执行搜索
-    Future<void> search(String query, {String? type, int page = 1}) async
+    Future<void> search(String query, {int? type, int page = 1}) async
     {
         final searchType = type ?? state.searchType;
         state = state.copyWith(isLoading: true, error: null, query: query, searchType: searchType);
@@ -153,7 +154,7 @@ class SearchNotifier extends StateNotifier<SearchState>
 
         try
         {
-            final result = await _client.search(query, page: page, searchType: searchType);
+            final result = await _client.search(query, page: page, mainTag: searchType);
             state = state.copyWith(
                 results: page == 1
                     ? result.results
@@ -172,7 +173,7 @@ class SearchNotifier extends StateNotifier<SearchState>
     }
 
     /// 切换搜索类型
-    void setSearchType(String type)
+    void setSearchType(int type)
     {
         state = state.copyWith(searchType: type);
         // 如果已有查询词，用新类型重新搜索
@@ -235,11 +236,43 @@ class AlbumDetailState
     final bool isLoading;
     final String? error;
 
+    /// 异步计算得到的总页数（当 API 未返回 page_count 时启用）
+    final int totalPageCount;
+
+    /// 是否正在计算总页数
+    final bool isLoadingPageCount;
+
     const AlbumDetailState({
         this.detail,
         this.isLoading = false,
         this.error,
+        this.totalPageCount = 0,
+        this.isLoadingPageCount = false,
     });
+
+    /// 用于 UI 显示的总页数，优先使用异步计算结果
+    int get displayPageCount
+    {
+        if (totalPageCount > 0) return totalPageCount;
+        return detail?.pageCount ?? 0;
+    }
+
+    AlbumDetailState copyWith({
+        AlbumDetail? detail,
+        bool? isLoading,
+        String? error,
+        int? totalPageCount,
+        bool? isLoadingPageCount,
+    })
+    {
+        return AlbumDetailState(
+            detail: detail ?? this.detail,
+            isLoading: isLoading ?? this.isLoading,
+            error: error,
+            totalPageCount: totalPageCount ?? this.totalPageCount,
+            isLoadingPageCount: isLoadingPageCount ?? this.isLoadingPageCount,
+        );
+    }
 }
 
 /// 本子详情 Provider
@@ -258,10 +291,51 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
         {
             final detail = await _client.getAlbumDetail(albumId);
             state = AlbumDetailState(detail: detail);
+
+            // API 不再返回 page_count，异步统计各章节图片总数以显示真实总页数
+            if (detail.pageCount <= 0 && detail.episodes.isNotEmpty)
+            {
+                unawaited(_calculateTotalPageCount(detail));
+            }
         }
         catch (e)
         {
             state = AlbumDetailState(error: e.toString());
+        }
+    }
+
+    /// 分批并发获取章节详情，统计本子总页数
+    /// 限制并发数以避免对服务器造成过大压力
+    Future<void> _calculateTotalPageCount(AlbumDetail detail) async
+    {
+        state = state.copyWith(isLoadingPageCount: true);
+        const concurrency = 5;
+        var total = 0;
+
+        try
+        {
+            final episodes = detail.episodes;
+            for (var i = 0; i < episodes.length; i += concurrency)
+            {
+                final batch = episodes.skip(i).take(concurrency).toList();
+                final futures = batch.map(
+                    (episode) => _client.getPhotoDetail(episode.photoId),
+                );
+                final photoDetails = await Future.wait(futures);
+                for (final photo in photoDetails)
+                {
+                    total += photo.pageArr.length;
+                }
+            }
+
+            state = state.copyWith(
+                totalPageCount: total,
+                isLoadingPageCount: false,
+            );
+        }
+        catch (e)
+        {
+            state = state.copyWith(isLoadingPageCount: false);
         }
     }
 }
@@ -315,7 +389,7 @@ class CategoryState
 /// 分类浏览 Provider
 class CategoryNotifier extends StateNotifier<CategoryState>
 {
-    final JmClient _client;
+    final JmClient? _client;
 
     CategoryNotifier(this._client) : super(const CategoryState());
 
@@ -327,6 +401,12 @@ class CategoryNotifier extends StateNotifier<CategoryState>
         int page = 1,
     }) async
     {
+        if (_client == null)
+        {
+            state = state.copyWith(isLoading: false);
+            return;
+        }
+
         state = state.copyWith(isLoading: true, error: null);
 
         try

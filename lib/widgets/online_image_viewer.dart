@@ -3,12 +3,17 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import '../core/jm/jm_image_loader.dart';
+import '../core/reader/reader_download_engine.dart';
+import '../core/reader/reader_image_loader.dart';
 import '../theme/app_colors.dart';
 
 /// 在线阅读单图组件
 /// 负责单张图片的加载、显示、重试
-/// 支持本地文件优先（如果 [localFilePath] 存在则直接读本地）
+/// 加载优先级：
+///   1. 已下载的本地文件（[localFilePath] + .ok 标记）
+///   2. 阅读本地缓存
+///   3. 临时解密缓存
+///   4. 网络下载（多线程引擎）
 class OnlineImageViewer extends StatefulWidget
 {
     /// 章节 ID
@@ -26,8 +31,11 @@ class OnlineImageViewer extends StatefulWidget
     /// 本地文件路径（可选；存在则优先读本地）
     final String? localFilePath;
 
-    /// JmImageLoader 实例
-    final JmImageLoader loader;
+    /// 阅读图片加载器
+    final ReaderImageLoader loader;
+
+    /// 下载优先级
+    final DownloadPriority priority;
 
     /// 全局缩放比例（默认1.0，由阅读器传入）
     final double scale;
@@ -40,6 +48,7 @@ class OnlineImageViewer extends StatefulWidget
         required this.aid,
         required this.loader,
         this.localFilePath,
+        this.priority = DownloadPriority.background,
         this.scale = 1.0,
     });
 
@@ -86,6 +95,17 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
         }
     }
 
+    @override
+    void dispose()
+    {
+        // 离开视口时取消低优先级下载，避免浪费带宽
+        if (widget.priority != DownloadPriority.immediate)
+        {
+            widget.loader.cancel(widget.photoId, widget.filename);
+        }
+        super.dispose();
+    }
+
     /// 启动加载流程
     Future<void> _startLoad() async
     {
@@ -100,8 +120,7 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
 
         try
         {
-            // 1. 本地优先——但只有在 .ok 标记存在时才信任本地文件
-            // 没有 .ok 标记说明之前下载流程没成功解密（可能是旧 build 残留的加密图）
+            // 1. 已下载的本地文件优先（必须有 .ok 标记）
             if (widget.localFilePath != null &&
                 File(widget.localFilePath!).existsSync() &&
                 File('${widget.localFilePath!}.ok').existsSync())
@@ -120,12 +139,13 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
                 return;
             }
 
-            // 2. 在线解密
-            final result = await widget.loader.loadAndDecode(
+            // 2. 走统一阅读图片加载器（临时缓存 / 网络）
+            final result = await widget.loader.load(
                 photoId: widget.photoId,
                 filename: widget.filename,
                 scrambleId: widget.scrambleId,
                 aid: widget.aid,
+                priority: widget.priority,
                 onProgress: (p)
                 {
                     if (mounted)
@@ -143,6 +163,8 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
             setState(()
             {
                 _bytes = result.bytes;
+                _stage = _sourceText(result.source);
+                _progress = 1.0;
                 _loading = false;
             });
         }
@@ -154,6 +176,20 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
                 _error = e.toString();
                 _loading = false;
             });
+        }
+    }
+
+    /// 根据图片来源返回显示文本
+    String _sourceText(ReaderImageSource source)
+    {
+        switch (source)
+        {
+            case ReaderImageSource.memory:
+                return '内存';
+            case ReaderImageSource.decodedCache:
+                return '缓存';
+            case ReaderImageSource.network:
+                return '网络';
         }
     }
 

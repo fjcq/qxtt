@@ -7,43 +7,10 @@ import '../core/jm/jm_client.dart';
 import '../core/jm/jm_config.dart';
 import '../providers/search_provider.dart';
 import '../theme/app_colors.dart';
-
-/// 单个域名的健康历史（在内存中累积，多次测试不持久化）
-class DomainHealth
-{
-    final int totalTests;
-    final int successTests;
-
-    const DomainHealth({required this.totalTests, required this.successTests});
-
-    double get successRate => totalTests == 0 ? 0 : successTests / totalTests;
-
-    static const empty = DomainHealth(totalTests: 0, successTests: 0);
-
-    DomainHealth add(bool success) => DomainHealth(
-        totalTests: totalTests + 1,
-        successTests: successTests + (success ? 1 : 0),
-    );
-
-    /// 健康档位：基于成功率
-    /// 0: 健康 (>= 80%)   → 绿
-    /// 1: 警告 (50~80%)   → 黄
-    /// 2: 不健康 (< 50%)  → 橙
-    /// 3: 未知 (< 3 次)   → 灰
-    int get healthLevel
-    {
-        if (totalTests < 3) return 3;
-        if (successRate >= 0.8) return 0;
-        if (successRate >= 0.5) return 1;
-        return 2;
-    }
-
-    String get displayHealth
-    {
-        if (totalTests == 0) return '';
-        return '$successTests/$totalTests';
-    }
-}
+import 'domain_action_bar.dart';
+import 'domain_health.dart';
+import 'domain_test_progress.dart';
+import 'domain_tile.dart';
 
 /// 域名管理页
 /// 提供：
@@ -417,9 +384,24 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
             body: Column(
                 children: [
                     // ===== 顶部操作栏 =====
-                    _buildActionBar(),
+                    DomainActionBar(
+                        refreshing: _refreshing,
+                        testing: _testing,
+                        onRefreshLatest: _refreshLatest,
+                        onTestAll: _testCurrentTab,
+                        onShuffle: _shuffleCurrentTab,
+                        onSortBySpeed: _sortCurrentTabBySpeed,
+                        onClearHealth: _clearHealth,
+                        onResetDefault: _resetCurrentTabToDefault,
+                        onAddDomain: _addCustomDomain,
+                    ),
                     // ===== 测速进度条 =====
-                    if (_testing) _buildProgressBar(),
+                    DomainTestProgress(
+                        testing: _testing,
+                        progress: _testProgress,
+                        total: _testTotal,
+                        onCancel: _cancelTest,
+                    ),
                     const Divider(height: 1, color: AppColors.divider),
                     // ===== 列表 =====
                     Expanded(
@@ -444,147 +426,6 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
                         ),
                     ),
                 ],
-            ),
-        );
-    }
-
-    /// 顶部操作栏（横向滚动避免溢出）
-    Widget _buildActionBar()
-    {
-        return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-                children: [
-                    _actionButton(
-                        icon: Icons.cloud_download_outlined,
-                        label: '获取最新',
-                        onTap: _refreshing ? null : _refreshLatest,
-                        loading: _refreshing,
-                    ),
-                    const SizedBox(width: 6),
-                    _actionButton(
-                        icon: Icons.speed_outlined,
-                        label: '测试全部',
-                        onTap: _testing ? null : _testCurrentTab,
-                        loading: _testing,
-                    ),
-                    const SizedBox(width: 6),
-                    _actionButton(
-                        icon: Icons.shuffle,
-                        label: '随机打乱',
-                        onTap: _shuffleCurrentTab,
-                    ),
-                    const SizedBox(width: 6),
-                    _actionButton(
-                        icon: Icons.sort,
-                        label: '按速度排序',
-                        onTap: _sortCurrentTabBySpeed,
-                    ),
-                    const SizedBox(width: 6),
-                    _actionButton(
-                        icon: Icons.history_toggle_off,
-                        label: '清空历史',
-                        onTap: _clearHealth,
-                    ),
-                    const SizedBox(width: 6),
-                    _actionButton(
-                        icon: Icons.restore,
-                        label: '恢复默认',
-                        onTap: _resetCurrentTabToDefault,
-                    ),
-                    const SizedBox(width: 6),
-                    _actionButton(
-                        icon: Icons.add,
-                        label: '添加域名',
-                        onTap: _addCustomDomain,
-                    ),
-                ],
-            ),
-        );
-    }
-
-    /// 测速进度条
-    Widget _buildProgressBar()
-    {
-        final completed = (_testProgress * _testTotal).round();
-        return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: AppColors.surfaceVariant,
-            child: Row(
-                children: [
-                    const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.accent,
-                        ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                                Text(
-                                    '测速中 $completed/$_testTotal',
-                                    style: const TextStyle(fontSize: 12),
-                                ),
-                                const SizedBox(height: 4),
-                                LinearProgressIndicator(
-                                    value: _testProgress,
-                                    backgroundColor: AppColors.surface,
-                                    color: AppColors.accent,
-                                    minHeight: 3,
-                                ),
-                            ],
-                        ),
-                    ),
-                    IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        color: AppColors.textDisabled,
-                        onPressed: _cancelTest,
-                        visualDensity: VisualDensity.compact,
-                    ),
-                ],
-            ),
-        );
-    }
-
-    Widget _actionButton({
-        required IconData icon,
-        required String label,
-        required VoidCallback? onTap,
-        bool loading = false,
-    })
-    {
-        return InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
-                    borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                        if (loading)
-                            const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.accent,
-                                ),
-                            )
-                        else
-                            Icon(icon, size: 16, color: AppColors.accent),
-                        const SizedBox(width: 6),
-                        Text(label, style: const TextStyle(fontSize: 12)),
-                    ],
-                ),
             ),
         );
     }
@@ -628,7 +469,7 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
                 final domain = list[index];
                 final result = results[domain];
                 final h = health[domain] ?? DomainHealth.empty;
-                return _DomainTile(
+                return DomainTile(
                     key: ValueKey('${_tab.index}_$domain'),
                     index: index,
                     domain: domain,
@@ -637,182 +478,6 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
                     onDelete: () => onDelete(index),
                 );
             },
-        );
-    }
-}
-
-/// 单个域名行
-class _DomainTile extends StatelessWidget
-{
-    final int index;
-    final String domain;
-    final DomainTestResult? result;
-    final DomainHealth health;
-    final VoidCallback onDelete;
-
-    const _DomainTile({
-        super.key,
-        required this.index,
-        required this.domain,
-        required this.result,
-        required this.health,
-        required this.onDelete,
-    });
-
-    Color _speedColor()
-    {
-        if (result == null) return AppColors.textDisabled;
-        switch (result!.speedLevel)
-        {
-            case 0: return AppColors.success;
-            case 1: return AppColors.accentLight;
-            case 2: return AppColors.warning;
-            default: return AppColors.error;
-        }
-    }
-
-    Color _healthColor()
-    {
-        switch (health.healthLevel)
-        {
-            case 0: return AppColors.success;
-            case 1: return AppColors.accentLight;
-            case 2: return AppColors.warning;
-            default: return AppColors.textDisabled;
-        }
-    }
-
-    @override
-    Widget build(BuildContext context)
-    {
-        final speedColor = _speedColor();
-        final healthColor = _healthColor();
-        return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                    color: result == null
-                        ? AppColors.divider
-                        : speedColor.withValues(alpha: 0.4),
-                    width: 1,
-                ),
-            ),
-            child: Row(
-                children: [
-                    // 拖拽手柄
-                    ReorderableDragStartListener(
-                        index: index,
-                        child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Icon(
-                                Icons.drag_indicator,
-                                color: AppColors.textDisabled,
-                                size: 20,
-                            ),
-                        ),
-                    ),
-                    // 序号
-                    Container(
-                        width: 22,
-                        alignment: Alignment.center,
-                        child: Text(
-                            '${index + 1}',
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                            ),
-                        ),
-                    ),
-                    // 域名 + 副信息
-                    Expanded(
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                                Text(
-                                    domain,
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                ),
-                                // 健康历史 + HTTP 状态
-                                Row(
-                                    children: [
-                                        if (result != null && result!.isSuccess
-                                            && result!.statusCode != null) ...[
-                                            Text(
-                                                'HTTP ${result!.statusCode}',
-                                                style: const TextStyle(
-                                                    fontSize: 10,
-                                                    color: AppColors.textDisabled,
-                                                ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                        ],
-                                        if (health.totalTests > 0) ...[
-                                            Icon(
-                                                Icons.favorite,
-                                                size: 10,
-                                                color: healthColor,
-                                            ),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                                health.displayHealth,
-                                                style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: healthColor,
-                                                ),
-                                            ),
-                                        ],
-                                    ],
-                                ),
-                                if (result != null && !result!.isSuccess)
-                                    Text(
-                                        '错误: ${result!.error}',
-                                        style: const TextStyle(
-                                            fontSize: 10,
-                                            color: AppColors.error,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                    ),
-                            ],
-                        ),
-                    ),
-                    // 测速标签
-                    if (result != null)
-                        Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                                color: speedColor.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                                result!.displayLatency,
-                                style: TextStyle(
-                                    color: speedColor,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                ),
-                            ),
-                        ),
-                    // 删除
-                    IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            color: AppColors.textDisabled, size: 20),
-                        onPressed: onDelete,
-                        visualDensity: VisualDensity.compact,
-                    ),
-                ],
-            ),
         );
     }
 }

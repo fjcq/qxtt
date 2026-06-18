@@ -173,6 +173,31 @@ class ConfigNotifier extends StateNotifier<ConfigState>
         _persist();
     }
 
+    /// 更新阅读缓存最大大小
+    void updateReaderCacheMaxSizeBytes(int bytes)
+    {
+        state = state.copyWith(
+            config: state.config.copyWith(
+                readerCacheMaxSizeBytes: bytes.clamp(
+                    100 * 1024 * 1024,
+                    10 * 1024 * 1024 * 1024,
+                ),
+            ),
+        );
+        _persist();
+    }
+
+    /// 更新在线阅读预加载页数
+    void updatePreloadPageCount(int count)
+    {
+        state = state.copyWith(
+            config: state.config.copyWith(
+                preloadPageCount: count.clamp(0, 5),
+            ),
+        );
+        _persist();
+    }
+
     @override
     void dispose()
     {

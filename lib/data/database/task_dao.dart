@@ -66,6 +66,9 @@ class TaskDao
             'taskType': task.taskType,
             'jmId': task.jmId,
             'albumId': task.albumId,
+            'albumTitle': task.albumTitle,
+            'episodeIndex': task.episodeIndex,
+            'episodeName': task.episodeName,
             'status': task.status,
             'message': task.message,
             'createdAt': task.createdAt,
@@ -98,6 +101,9 @@ class TaskDao
             ..taskType = taskType
             ..jmId = jmId
             ..albumId = albumId
+            ..albumTitle = json['albumTitle']?.toString() ?? ''
+            ..episodeIndex = json['episodeIndex']?.toString() ?? ''
+            ..episodeName = json['episodeName']?.toString() ?? ''
             ..status = json['status']?.toString() ?? 'pending'
             ..message = json['message']?.toString() ?? ''
             ..createdAt = json['createdAt']?.toString() ?? ''
