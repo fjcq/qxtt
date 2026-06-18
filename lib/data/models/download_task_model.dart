@@ -30,6 +30,11 @@ class DownloadTaskModel
     /// 仅在内存中传递，不持久化
     List<String> downloadedPhotoIds = const [];
 
+    /// 已有部分图片下载的章节 photoId 列表
+    /// 用于"边下边看"：任意一张图成功下载后即把对应章节加入此集合，
+    /// 区别于 [downloadedPhotoIds]（仅在章节全部完成时追加）
+    List<String> partialDownloadedPhotoIds = const [];
+
     /// 任务状态: "pending" | "running" | "completed" | "failed" | "cancelled"
     String status = 'pending';
 

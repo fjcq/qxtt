@@ -64,8 +64,8 @@ class SortFilterBar extends StatelessWidget
                                     ? Icons.close
                                     : Icons.checklist_rtl,
                                 color: isEditing
-                                    ? AppColors.accent
-                                    : AppColors.textSecondary,
+                                    ? context.appColors.accent
+                                    : context.appColors.textSecondary,
                             ),
                         ),
                     ],
@@ -90,11 +90,11 @@ class _SortChip extends StatelessWidget
             tooltip: '排序',
             position: PopupMenuPosition.under,
             onSelected: onSelected,
-            color: AppColors.surface,
+            color: context.appColors.surface,
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
                 side: BorderSide(
-                    color: AppColors.divider.withValues(alpha: 0.6),
+                    color: context.appColors.divider.withValues(alpha: 0.6),
                 ),
             ),
             itemBuilder: (context)
@@ -111,16 +111,16 @@ class _SortChip extends StatelessWidget
                                         : Icons.radio_button_unchecked,
                                     size: 16,
                                     color: current == type
-                                        ? AppColors.accent
-                                        : AppColors.textDisabled,
+                                        ? context.appColors.accent
+                                        : context.appColors.textDisabled,
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
                                     type.label,
                                     style: TextStyle(
                                         color: current == type
-                                            ? AppColors.textPrimary
-                                            : AppColors.textSecondary,
+                                            ? context.appColors.textPrimary
+                                            : context.appColors.textSecondary,
                                     ),
                                 ),
                             ],
@@ -131,33 +131,33 @@ class _SortChip extends StatelessWidget
             child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: context.appColors.surface,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: AppColors.divider.withValues(alpha: 0.6),
+                        color: context.appColors.divider.withValues(alpha: 0.6),
                     ),
                 ),
                 child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                        const Icon(
+                        Icon(
                             Icons.sort,
                             size: 16,
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                         ),
                         const SizedBox(width: 4),
                         Text(
                             current.label,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
-                                color: AppColors.textPrimary,
+                                color: context.appColors.textPrimary,
                             ),
                         ),
                         const SizedBox(width: 2),
-                        const Icon(
+                        Icon(
                             Icons.arrow_drop_down,
                             size: 18,
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                         ),
                     ],
                 ),
@@ -216,42 +216,42 @@ class _SearchFieldState extends State<_SearchField>
         return Container(
             height: 40,
             decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: context.appColors.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: AppColors.divider.withValues(alpha: 0.6),
+                    color: context.appColors.divider.withValues(alpha: 0.6),
                 ),
             ),
             child: TextField(
                 controller: _controller,
                 onChanged: widget.onChanged,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.textPrimary,
+                    color: context.appColors.textPrimary,
                 ),
                 decoration: InputDecoration(
                     hintText: '搜索标题/作者',
-                    hintStyle: const TextStyle(
+                    hintStyle: TextStyle(
                         fontSize: 13,
-                        color: AppColors.textDisabled,
+                        color: context.appColors.textDisabled,
                     ),
                     isDense: true,
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: InputBorder.none,
-                    prefixIcon: const Icon(
+                    prefixIcon: Icon(
                         Icons.search,
                         size: 18,
-                        color: AppColors.textDisabled,
+                        color: context.appColors.textDisabled,
                     ),
                     suffixIcon: _controller.text.isEmpty
                         ? null
                         : IconButton(
                             splashRadius: 18,
-                            icon: const Icon(
+                            icon: Icon(
                                 Icons.close,
                                 size: 16,
-                                color: AppColors.textDisabled,
+                                color: context.appColors.textDisabled,
                             ),
                             onPressed: ()
                             {

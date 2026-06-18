@@ -123,21 +123,4 @@ class JmImageCacheManager
             // 写入失败不影响主流程
         }
     }
-
-    /// 清理解密缓存（设置页用）
-    static Future<void> clearDecoded() async
-    {
-        try
-        {
-            final dir = await _getDecodedDir();
-            if (await dir.exists())
-            {
-                await dir.delete(recursive: true);
-            }
-        }
-        catch (_)
-        {
-            // 忽略
-        }
-    }
 }

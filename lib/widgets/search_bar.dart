@@ -54,11 +54,11 @@ class _SearchBarState extends State<AppSearchBar>
                 // 搜索输入框
                 Container(
                     decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant,
+                        color: context.appColors.surfaceVariant,
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                             color: _focusNode.hasFocus
-                                ? AppColors.accent
+                                ? context.appColors.accent
                                 : Colors.transparent,
                             width: 2,
                         ),
@@ -66,23 +66,23 @@ class _SearchBarState extends State<AppSearchBar>
                     child: Row(
                         children: [
                             const SizedBox(width: 16),
-                            const Icon(
+                            Icon(
                                 Icons.search,
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                                 child: TextField(
                                     controller: _controller,
                                     focusNode: _focusNode,
-                                    style: const TextStyle(
-                                        color: AppColors.textPrimary,
+                                    style: TextStyle(
+                                        color: context.appColors.textPrimary,
                                         fontSize: 16,
                                     ),
                                     decoration: InputDecoration(
                                         hintText: widget.hintText,
-                                        hintStyle: const TextStyle(
-                                            color: AppColors.textDisabled,
+                                        hintStyle: TextStyle(
+                                            color: context.appColors.textDisabled,
                                         ),
                                         border: InputBorder.none,
                                         isDense: true,
@@ -102,9 +102,9 @@ class _SearchBarState extends State<AppSearchBar>
                             ),
                             if (_controller.text.isNotEmpty)
                                 IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                         Icons.clear,
-                                        color: AppColors.textSecondary,
+                                        color: context.appColors.textSecondary,
                                         size: 20,
                                     ),
                                     onPressed: ()
@@ -114,9 +114,9 @@ class _SearchBarState extends State<AppSearchBar>
                                     },
                                 ),
                             IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                     Icons.arrow_forward,
-                                    color: AppColors.accent,
+                                    color: context.appColors.accent,
                                 ),
                                 onPressed: ()
                                 {
@@ -149,8 +149,8 @@ class _SearchBarState extends State<AppSearchBar>
                                     ),
                                     decoration: BoxDecoration(
                                         color: isSelected
-                                            ? AppColors.accent
-                                            : AppColors.surfaceVariant,
+                                            ? context.appColors.accent
+                                            : context.appColors.surfaceVariant,
                                         borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
@@ -161,8 +161,8 @@ class _SearchBarState extends State<AppSearchBar>
                                                 ? FontWeight.w600
                                                 : FontWeight.normal,
                                             color: isSelected
-                                                ? AppColors.background
-                                                : AppColors.textSecondary,
+                                                ? context.appColors.background
+                                                : context.appColors.textSecondary,
                                         ),
                                     ),
                                 ),

@@ -174,22 +174,22 @@ mixin DownloadPageLibraryMixin on ConsumerState<DownloadPage>
                         Icon(
                             Icons.library_books_outlined,
                             size: 72,
-                            color: AppColors.textDisabled.withValues(alpha: 0.6),
+                            color: context.appColors.textDisabled.withValues(alpha: 0.6),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                             '书架空空如也',
                             style: TextStyle(
-                                color: AppColors.textPrimary,
+                                color: context.appColors.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
                             ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                             '去搜索感兴趣的漫画并下载吧',
                             style: TextStyle(
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                                 fontSize: 13,
                             ),
                         ),
@@ -211,13 +211,13 @@ mixin DownloadPageLibraryMixin on ConsumerState<DownloadPage>
                         Icon(
                             Icons.search_off,
                             size: 56,
-                            color: AppColors.textDisabled.withValues(alpha: 0.6),
+                            color: context.appColors.textDisabled.withValues(alpha: 0.6),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                             '没有匹配的本子',
                             style: TextStyle(
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                                 fontSize: 14,
                             ),
                         ),

@@ -70,19 +70,19 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
   Widget _buildChapterLoadingOverlay() {
     return Container(
       color: Colors.black54,
-      child: const Center(
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             CircularProgressIndicator(
-              color: AppColors.accent,
+              color: context.appColors.accent,
               strokeWidth: 3,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text(
               '正在切换章节...',
               style: TextStyle(
-                color: AppColors.textSecondary,
+                color: context.appColors.textSecondary,
                 fontSize: 14,
               ),
             ),
@@ -184,19 +184,19 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
               child: albumDetail == null
                   ? GestureDetector(
                       onTap: retryLoadAlbumDetail,
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             Icons.refresh,
-                            color: AppColors.accent,
+                            color: context.appColors.accent,
                             size: 14,
                           ),
-                          SizedBox(width: 4),
+                          const SizedBox(width: 4),
                           Text(
                             '章节信息获取失败，点击重试',
                             style: TextStyle(
-                              color: AppColors.accent,
+                              color: context.appColors.accent,
                               fontSize: 11,
                             ),
                           ),
@@ -283,10 +283,10 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
         Expanded(
           child: SliderTheme(
             data: SliderThemeData(
-              activeTrackColor: AppColors.accent,
+              activeTrackColor: context.appColors.accent,
               inactiveTrackColor: Colors.white24,
-              thumbColor: AppColors.accent,
-              overlayColor: AppColors.accent.withValues(alpha: 0.12),
+              thumbColor: context.appColors.accent,
+              overlayColor: context.appColors.accent.withValues(alpha: 0.12),
               trackHeight: 3,
               thumbShape: const RoundSliderThumbShape(
                 enabledThumbRadius: 7,

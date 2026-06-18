@@ -8,11 +8,11 @@ import 'download_notifier_base.dart';
 import 'download_task_view.dart';
 import 'library_provider.dart';
 
-/// 下载任务的调度层：创建、取消、重试、删除、批量操作等
+/// 下载任务的调度层：创建、取消、暂停、继续、重试、删除、批量操作等
 mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
 {
     /// 创建下载任务并开始下载
-    /// 若存在未完成的同目标任务（pending/running），不会重复创建
+    /// 若存在未完成的同目标任务（pending/running/paused），不会重复创建
     /// 返回 (taskId, isNewlyCreated)
     Future<({String taskId, bool isNewlyCreated})> createAndStartDownload(
         String type,
@@ -42,26 +42,37 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
         );
         await loadTasks();
 
-        if (type == 'album')
-        {
-            downloadService.downloadAlbum(task.taskId, jmId).then((_) => loadTasks());
-        }
-        else
-        {
-            downloadService.downloadPhoto(task).then((_) => loadTasks());
-        }
-
+        _dispatchTask(task);
         return (taskId: task.taskId, isNewlyCreated: true);
     }
 
-    /// 查找未完成（pending/running）的同目标下载任务
+    /// 派发一个已存在的任务（用于启动恢复与续传）
+    void _dispatchTask(DownloadTaskModel task)
+    {
+        // 必须先清除暂停标记，否则下载流程内的 onPauseSignal 会立即把新下载取消
+        downloadService.clearPausedFlag(task.taskId);
+        if (task.taskType == 'album')
+        {
+            downloadService
+                .downloadAlbum(task.taskId, task.jmId)
+                .then((_) => loadTasks());
+        }
+        else
+        {
+            downloadService
+                .downloadPhoto(task)
+                .then((_) => loadTasks());
+        }
+    }
+
+    /// 查找未完成（pending/running/paused）的同目标下载任务
     DownloadTaskModel? _findActiveDuplicate(
         String type,
         String jmId,
         String albumId,
     )
     {
-        const activeStatuses = {'pending', 'running'};
+        const activeStatuses = {'pending', 'running', 'paused'};
         for (final t in state.tasks)
         {
             if (!activeStatuses.contains(t.status)) continue;
@@ -88,31 +99,55 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
         await loadTasks();
     }
 
+    /// 暂停下载任务
+    /// - 取消正在进行的 HTTP 请求
+    /// - 保留本地已下载的部分文件
+    /// - 状态置为 `paused`，可通过 [resumeTask] 继续
+    Future<void> pauseTask(String taskId) async
+    {
+        downloadService.pauseTask(taskId);
+        // 状态由 downloadAlbum / downloadPhoto 在 finally 写回，
+        // 这里也立即写一份，避免 UI 长时间停留在 running
+        await taskDao.updateTaskStatus(taskId, 'paused', '已暂停', 0.0);
+        await loadTasks();
+    }
+
+    /// 继续已暂停的下载任务
+    /// - 不删除本地已下载的部分文件
+    /// - 重新派发任务，下载流程会自动跳过已有图片
+    /// - 已完成的任务不允许继续（按重试处理）
+    Future<bool> resumeTask(String taskId) async
+    {
+        final task = state.tasks.where((t) => t.taskId == taskId).firstOrNull;
+        if (task == null) return false;
+        if (task.status == 'paused')
+        {
+            // 续传：不清空文件，直接重派
+            _dispatchTask(task);
+            return true;
+        }
+        // 非 paused 状态走重试
+        return retryTask(taskId);
+    }
+
     /// 重试已失败的下载任务
     /// - 取消当前任务（如有运行）
     /// - 清理可能存在的本地部分文件，避免新旧数据混合
     /// - 重置状态为 pending 并重新下载
+    /// 注意：paused 任务请使用 [resumeTask]；本方法会清理已下载的部分文件
     Future<bool> retryTask(String taskId) async
     {
         final task = state.tasks.where((t) => t.taskId == taskId).firstOrNull;
         if (task == null) return false;
         if (!DownloadTaskView(task).isRetryable) return false;
+        // paused 任务优先走续传，避免误清已下载的文件
+        if (task.status == 'paused') return resumeTask(taskId);
+
         downloadService.cancelTask(taskId);
         await _cleanupTaskFiles(task);
         await taskDao.updateTaskStatus(taskId, 'pending', '准备重试', 0.0);
         await loadTasks();
-        if (task.taskType == 'album')
-        {
-            downloadService
-                .downloadAlbum(task.taskId, task.jmId)
-                .then((_) => loadTasks());
-        }
-        else
-        {
-            downloadService
-                .downloadPhoto(task)
-                .then((_) => loadTasks());
-        }
+        _dispatchTask(task);
         return true;
     }
 
@@ -127,10 +162,21 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
         return count;
     }
 
+    /// 批量继续已暂停的任务
+    Future<int> resumeTasks(Iterable<String> taskIds) async
+    {
+        var count = 0;
+        for (final id in taskIds)
+        {
+            if (await resumeTask(id)) count++;
+        }
+        return count;
+    }
+
     /// 删除下载任务
     /// [deleteFiles] 是否同时删除本地文件（默认 true）
     /// - active 任务：会先取消下载，再删除文件
-    /// - failed/cancelled 任务：直接删除记录与文件
+    /// - failed/cancelled/paused 任务：直接删除记录与文件
     /// - completed 任务：通常已被自动归档，不应到达此处
     Future<void> deleteTask(
         String taskId, {
@@ -213,6 +259,29 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
             .map((t) => t.taskId)
             .toList();
         return retryTasks(failedIds);
+    }
+
+    /// 全部继续已暂停任务
+    Future<int> resumeAllPaused() async
+    {
+        final pausedIds = state.tasks
+            .where((t) => t.status == 'paused')
+            .map((t) => t.taskId)
+            .toList();
+        return resumeTasks(pausedIds);
+    }
+
+    /// 全部暂停活动任务
+    Future<void> pauseAllActive() async
+    {
+        final activeIds = state.tasks
+            .where((t) => t.status == 'running' || t.status == 'pending')
+            .map((t) => t.taskId)
+            .toList();
+        for (final id in activeIds)
+        {
+            await pauseTask(id);
+        }
     }
 
     /// 全部取消活动任务

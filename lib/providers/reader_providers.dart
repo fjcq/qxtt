@@ -32,6 +32,12 @@ final readerDownloadEngineProvider = Provider<ReaderDownloadEngine>((ref)
         concurrency: config.imageThreadCount.clamp(1, 10),
     );
 
+    // 监听 config 变更，实时调整并发数（不会重建 Provider，下载队列保留）
+    ref.listen<ConfigState>(configProvider, (prev, next)
+    {
+        engine.concurrency = next.config.imageThreadCount;
+    });
+
     ref.onDispose(engine.dispose);
     return engine;
 });
@@ -61,6 +67,12 @@ final smartDownloadServiceProvider = Provider<SmartDownloadService>((ref)
         networkMonitor: monitor,
         imageThreadCount: config.imageThreadCount.clamp(1, 10),
     );
+
+    // 监听 config 变更，实时调整并发数（已开始的下载批次信号量不变）
+    ref.listen<ConfigState>(configProvider, (prev, next)
+    {
+        service.imageThreadCount = next.config.imageThreadCount;
+    });
 
     ref.onDispose(service.dispose);
     return service;

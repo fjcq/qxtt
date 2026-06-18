@@ -27,13 +27,13 @@ class AlbumCard extends StatelessWidget
             onTap: onTap,
             child: Container(
                 decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: context.appColors.surface,
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [
+                    boxShadow: [
                         BoxShadow(
-                            color: AppColors.shadow,
+                            color: context.appColors.shadow,
                             blurRadius: 8,
-                            offset: Offset(0, 2),
+                            offset: const Offset(0, 2),
                         ),
                     ],
                 ),
@@ -43,7 +43,7 @@ class AlbumCard extends StatelessWidget
                     children: [
                         // 封面图
                         Expanded(
-                            child: _buildCover(),
+                            child: _buildCover(context),
                         ),
                         // 标题和信息
                         Padding(
@@ -55,10 +55,10 @@ class AlbumCard extends StatelessWidget
                                         album.title,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w500,
-                                            color: AppColors.textPrimary,
+                                            color: context.appColors.textPrimary,
                                         ),
                                     ),
                                     if (album.author.isNotEmpty)
@@ -68,9 +68,9 @@ class AlbumCard extends StatelessWidget
                                                 album.author,
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                     fontSize: 11,
-                                                    color: AppColors.textSecondary,
+                                                    color: context.appColors.textSecondary,
                                                 ),
                                             ),
                                         ),
@@ -84,7 +84,7 @@ class AlbumCard extends StatelessWidget
     }
 
     /// 构建封面图
-    Widget _buildCover()
+    Widget _buildCover(BuildContext context)
     {
         if (album.coverUrl.isNotEmpty)
         {
@@ -93,22 +93,22 @@ class AlbumCard extends StatelessWidget
                 cacheManager: JmImageCacheManager.instance,
                 fit: BoxFit.cover,
                 width: double.infinity,
-                placeholder: (context, url) => _buildPlaceholder(),
-                errorWidget: (context, url, error) => _buildPlaceholder(),
+                placeholder: (context, url) => _buildPlaceholder(context),
+                errorWidget: (context, url, error) => _buildPlaceholder(context),
             );
         }
-        return _buildPlaceholder();
+        return _buildPlaceholder(context);
     }
 
     /// 构建占位图
-    Widget _buildPlaceholder()
+    Widget _buildPlaceholder(BuildContext context)
     {
         return Container(
-            color: AppColors.surfaceVariant,
-            child: const Center(
+            color: context.appColors.surfaceVariant,
+            child: Center(
                 child: Icon(
                     Icons.image_outlined,
-                    color: AppColors.textDisabled,
+                    color: context.appColors.textDisabled,
                     size: 32,
                 ),
             ),

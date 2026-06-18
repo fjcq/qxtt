@@ -70,21 +70,21 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                         Icon(
                             Icons.library_books,
                             size: 64,
-                            color: AppColors.textDisabled.withValues(alpha: 0.5),
+                            color: context.appColors.textDisabled.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                             '书架为空',
                             style: TextStyle(
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                                 fontSize: 16,
                             ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                             '下载漫画后会自动添加到书架',
                             style: TextStyle(
-                                color: AppColors.textDisabled,
+                                color: context.appColors.textDisabled,
                                 fontSize: 13,
                             ),
                         ),
@@ -137,10 +137,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 children: [
                     Container(
                         decoration: BoxDecoration(
-                            color: AppColors.surface,
+                            color: context.appColors.surface,
                             borderRadius: BorderRadius.circular(12),
                             border: isSelected
-                                ? Border.all(color: AppColors.accent, width: 2)
+                                ? Border.all(color: context.appColors.accent, width: 2)
                                 : null,
                         ),
                         clipBehavior: Clip.antiAlias,
@@ -149,7 +149,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                             children: [
                                 Expanded(
                                     child: Container(
-                                        color: AppColors.surfaceVariant,
+                                        color: context.appColors.surfaceVariant,
                                         child: Center(
                                             child: album.coverPath.isNotEmpty
                                                 ? Image.file(
@@ -157,14 +157,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                                                     fit: BoxFit.cover,
                                                     width: double.infinity,
                                                     errorBuilder: (_, __, ___) =>
-                                                        const Icon(
+                                                        Icon(
                                                             Icons.broken_image,
-                                                            color: AppColors.textDisabled,
+                                                            color: context.appColors.textDisabled,
                                                         ),
                                                 )
-                                                : const Icon(
+                                                : Icon(
                                                     Icons.image_outlined,
-                                                    color: AppColors.textDisabled,
+                                                    color: context.appColors.textDisabled,
                                                     size: 32,
                                                 ),
                                         ),
@@ -179,9 +179,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                                                 album.title,
                                                 maxLines: 2,
                                                 overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                     fontSize: 12,
-                                                    color: AppColors.textPrimary,
+                                                    color: context.appColors.textPrimary,
                                                 ),
                                             ),
                                             if (album.lastReadPage > 0)
@@ -189,9 +189,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                                                     padding: const EdgeInsets.only(top: 2),
                                                     child: Text(
                                                         '读到第 ${album.lastReadPage} 页',
-                                                        style: const TextStyle(
+                                                        style: TextStyle(
                                                             fontSize: 10,
-                                                            color: AppColors.accent,
+                                                            color: context.appColors.accent,
                                                         ),
                                                     ),
                                                 ),
@@ -212,11 +212,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                                 decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: isSelected
-                                        ? AppColors.accent
-                                        : AppColors.surfaceVariant,
+                                        ? context.appColors.accent
+                                        : context.appColors.surfaceVariant,
                                 ),
                                 child: isSelected
-                                    ? const Icon(Icons.check, size: 16, color: AppColors.background)
+                                    ? Icon(Icons.check, size: 16, color: context.appColors.background)
                                     : null,
                             ),
                         ),

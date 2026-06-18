@@ -240,9 +240,11 @@ class _JmClientCore
     // ===== 图片 URL 构造 =====
 
     /// 获取封面 URL
+    /// 域名基于 [albumId] 哈希稳定选择，确保同一本子多次调用得到相同 URL，
+    /// 避免详情页等场景反复 build 时 [CachedNetworkImage] 缓存命中失败导致闪烁
     String getAlbumCoverUrl(String albumId, {String size = '_3x4'})
     {
-        final domain = _pickRandomImageDomain();
+        final domain = _pickRandomImageDomain(salt: albumId);
         return 'https://$domain/media/albums/$albumId$size.jpg';
     }
 
@@ -260,10 +262,16 @@ class _JmClientCore
     }
 
     /// 随机选一个图片域名（实现 Python 版的 shuffled 效果）
-    String _pickRandomImageDomain()
+    /// 当 [salt] 不为空时使用 [salt] 的哈希取模，保证相同 [salt] 始终命中同一域名
+    String _pickRandomImageDomain({String? salt})
     {
         if (_imageDomainList.isEmpty) return JmConfig.domainImageList.first;
-        final idx = Random().nextInt(_imageDomainList.length);
+        if (salt == null || salt.isEmpty)
+        {
+            final idx = Random().nextInt(_imageDomainList.length);
+            return _imageDomainList[idx];
+        }
+        final idx = salt.hashCode.abs() % _imageDomainList.length;
         return _imageDomainList[idx];
     }
 

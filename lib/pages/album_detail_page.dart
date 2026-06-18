@@ -117,13 +117,13 @@ class AlbumDetailPage extends ConsumerWidget
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                     // 封面和信息
-                    _buildInfoSection(state, ref),
+                    _buildInfoSection(context, state, ref),
                     const SizedBox(height: 16),
                     // 标签
-                    if (detail.tags.isNotEmpty) _buildTags(detail.tags),
+                    if (detail.tags.isNotEmpty) _buildTags(context, detail.tags),
                     const SizedBox(height: 16),
                     // 简介
-                    if (detail.description.isNotEmpty) _buildDescription(detail.description),
+                    if (detail.description.isNotEmpty) _buildDescription(context, detail.description),
                     const SizedBox(height: 16),
                     // 章节列表
                     if (detail.episodes.isNotEmpty)
@@ -134,7 +134,7 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 构建信息区域
-    Widget _buildInfoSection(AlbumDetailState state, WidgetRef ref)
+    Widget _buildInfoSection(BuildContext context, AlbumDetailState state, WidgetRef ref)
     {
         final detail = state.detail!;
         final client = ref.watch(jmClientProvider);
@@ -155,17 +155,17 @@ class AlbumDetailPage extends ConsumerWidget
                         placeholder: (_, __) => Container(
                             width: 120,
                             height: 160,
-                            color: AppColors.surfaceVariant,
-                            child: const Center(
-                                child: Icon(Icons.image, color: AppColors.textDisabled),
+                            color: context.appColors.surfaceVariant,
+                            child: Center(
+                                child: Icon(Icons.image, color: context.appColors.textDisabled),
                             ),
                         ),
                         errorWidget: (_, __, ___) => Container(
                             width: 120,
                             height: 160,
-                            color: AppColors.surfaceVariant,
-                            child: const Center(
-                                child: Icon(Icons.broken_image, color: AppColors.textDisabled),
+                            color: context.appColors.surfaceVariant,
+                            child: Center(
+                                child: Icon(Icons.broken_image, color: context.appColors.textDisabled),
                             ),
                         ),
                     ),
@@ -178,25 +178,26 @@ class AlbumDetailPage extends ConsumerWidget
                         children: [
                             Text(
                                 detail.name,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
+                                    color: context.appColors.textPrimary,
                                 ),
                             ),
                             const SizedBox(height: 8),
-                            _buildInfoRow('作者', detail.author),
+                            _buildInfoRow(context, '作者', detail.author),
                             _buildInfoRow(
+                                context,
                                 '页数',
                                 state.isLoadingPageCount && state.displayPageCount == 0
                                     ? '计算中...'
                                     : '${state.displayPageCount}',
                             ),
-                            _buildInfoRow('章节', '${detail.episodeCount}'),
+                            _buildInfoRow(context, '章节', '${detail.episodeCount}'),
                             if (detail.pubDate.isNotEmpty)
-                                _buildInfoRow('日期', detail.pubDate),
+                                _buildInfoRow(context, '日期', detail.pubDate),
                             if (detail.views.isNotEmpty)
-                                _buildInfoRow('浏览', detail.views),
+                                _buildInfoRow(context, '浏览', detail.views),
                         ],
                     ),
                 ),
@@ -205,7 +206,7 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 构建信息行
-    Widget _buildInfoRow(String label, String value)
+    Widget _buildInfoRow(BuildContext context, String label, String value)
     {
         return Padding(
             padding: const EdgeInsets.only(bottom: 4),
@@ -213,17 +214,17 @@ class AlbumDetailPage extends ConsumerWidget
                 children: [
                     Text(
                         '$label: ',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 13,
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                         ),
                     ),
                     Flexible(
                         child: Text(
                             value,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
-                                color: AppColors.textPrimary,
+                                color: context.appColors.textPrimary,
                             ),
                             overflow: TextOverflow.ellipsis,
                         ),
@@ -234,7 +235,7 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 构建标签
-    Widget _buildTags(List<String> tags)
+    Widget _buildTags(BuildContext context, List<String> tags)
     {
         return Wrap(
             spacing: 8,
@@ -246,14 +247,14 @@ class AlbumDetailPage extends ConsumerWidget
                         vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant,
+                        color: context.appColors.surfaceVariant,
                         borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
                         tag,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                         ),
                     ),
                 ),
@@ -262,25 +263,25 @@ class AlbumDetailPage extends ConsumerWidget
     }
 
     /// 构建简介
-    Widget _buildDescription(String description)
+    Widget _buildDescription(BuildContext context, String description)
     {
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                const Text(
+                Text(
                     '简介',
                     style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: context.appColors.textPrimary,
                     ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                     description,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 14,
-                        color: AppColors.textSecondary,
+                        color: context.appColors.textSecondary,
                         height: 1.6,
                     ),
                 ),
@@ -297,12 +298,12 @@ class AlbumDetailPage extends ConsumerWidget
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                const Text(
+                Text(
                     '章节列表',
                     style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: context.appColors.textPrimary,
                     ),
                 ),
                 const SizedBox(height: 8),

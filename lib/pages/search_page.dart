@@ -94,10 +94,10 @@ class _SearchPageState extends ConsumerState<SearchPage>
                 actions: [
                     TextButton(
                         onPressed: () => _doSearch(_searchController.text),
-                        child: const Text(
+                        child: Text(
                             '搜索',
                             style: TextStyle(
-                                color: AppColors.accent,
+                                color: context.appColors.accent,
                                 fontSize: 15,
                             ),
                         ),
@@ -116,13 +116,13 @@ class _SearchPageState extends ConsumerState<SearchPage>
         return TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
-            style: const TextStyle(
-                color: AppColors.textPrimary,
+            style: TextStyle(
+                color: context.appColors.textPrimary,
                 fontSize: 15,
             ),
             decoration: InputDecoration(
                 hintText: '搜索漫画...',
-                hintStyle: const TextStyle(color: AppColors.textDisabled),
+                hintStyle: TextStyle(color: context.appColors.textDisabled),
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -132,9 +132,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
                     {
                         if (value.text.isEmpty) return const SizedBox.shrink();
                         return IconButton(
-                            icon: const Icon(
+                            icon: Icon(
                                 Icons.clear,
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                                 size: 18,
                             ),
                             onPressed: ()
@@ -171,13 +171,13 @@ class _SearchPageState extends ConsumerState<SearchPage>
                     ],
                     // 空状态
                     if (state.history.isEmpty)
-                        const Center(
+                        Center(
                             child: Padding(
-                                padding: EdgeInsets.only(top: 60),
+                                padding: const EdgeInsets.only(top: 60),
                                 child: Text(
                                     '输入关键词开始搜索',
                                     style: TextStyle(
-                                        color: AppColors.textDisabled,
+                                        color: context.appColors.textDisabled,
                                         fontSize: 14,
                                     ),
                                 ),
@@ -209,8 +209,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
                             ),
                             decoration: BoxDecoration(
                                 color: isSelected
-                                    ? AppColors.accent
-                                    : AppColors.surfaceVariant,
+                                    ? context.appColors.accent
+                                    : context.appColors.surfaceVariant,
                                 borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
@@ -221,8 +221,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
                                         ? FontWeight.w600
                                         : FontWeight.normal,
                                     color: isSelected
-                                        ? AppColors.background
-                                        : AppColors.textSecondary,
+                                        ? context.appColors.background
+                                        : context.appColors.textSecondary,
                                 ),
                             ),
                         ),
@@ -238,20 +238,20 @@ class _SearchPageState extends ConsumerState<SearchPage>
         return Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-                const Text(
+                Text(
                     '搜索历史',
                     style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: context.appColors.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                     ),
                 ),
                 GestureDetector(
                     onTap: () => ref.read(searchProvider.notifier).clearHistory(),
-                    child: const Text(
+                    child: Text(
                         '清空',
                         style: TextStyle(
-                            color: AppColors.textDisabled,
+                            color: context.appColors.textDisabled,
                             fontSize: 13,
                         ),
                     ),
@@ -282,13 +282,13 @@ class _SearchPageState extends ConsumerState<SearchPage>
                             vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                            color: AppColors.surfaceVariant,
+                            color: context.appColors.surfaceVariant,
                             borderRadius: BorderRadius.circular(18),
                         ),
                         child: Text(
                             keyword,
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
+                            style: TextStyle(
+                                color: context.appColors.textSecondary,
                                 fontSize: 13,
                             ),
                         ),
@@ -320,16 +320,16 @@ class _SearchPageState extends ConsumerState<SearchPage>
                 child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                        const Icon(
+                        Icon(
                             Icons.search_off,
                             size: 48,
-                            color: AppColors.textDisabled,
+                            color: context.appColors.textDisabled,
                         ),
                         const SizedBox(height: 12),
                         Text(
                             '没有找到 "${state.query}" 的结果',
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
+                            style: TextStyle(
+                                color: context.appColors.textSecondary,
                                 fontSize: 14,
                             ),
                         ),
@@ -364,8 +364,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                             child: Text(
                                 '共 ${state.total} 条结果',
-                                style: const TextStyle(
-                                    color: AppColors.textDisabled,
+                                style: TextStyle(
+                                    color: context.appColors.textDisabled,
                                     fontSize: 12,
                                 ),
                             ),
@@ -397,16 +397,16 @@ class _SearchPageState extends ConsumerState<SearchPage>
                     ),
                     // 加载更多指示器
                     if (state.isLoading)
-                        const SliverToBoxAdapter(
+                        SliverToBoxAdapter(
                             child: Padding(
-                                padding: EdgeInsets.all(16),
+                                padding: const EdgeInsets.all(16),
                                 child: Center(
                                     child: SizedBox(
                                         width: 24,
                                         height: 24,
                                         child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: AppColors.accent,
+                                            color: context.appColors.accent,
                                         ),
                                     ),
                                 ),
@@ -419,8 +419,8 @@ class _SearchPageState extends ConsumerState<SearchPage>
                             child: Center(
                                 child: Text(
                                     '第 ${state.currentPage} / ${state.totalPages} 页',
-                                    style: const TextStyle(
-                                        color: AppColors.textDisabled,
+                                    style: TextStyle(
+                                        color: context.appColors.textDisabled,
                                         fontSize: 12,
                                     ),
                                 ),

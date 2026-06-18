@@ -46,7 +46,7 @@ class DownloadedAlbumCard extends StatelessWidget
             child: Stack(
                 children: [
                     _buildCard(context, hasRead: hasRead),
-                    if (isEditing) _buildSelectionBadge(),
+                    if (isEditing) _buildSelectionBadge(context),
                 ],
             ),
         );
@@ -58,18 +58,18 @@ class DownloadedAlbumCard extends StatelessWidget
         return AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: context.appColors.surface,
                 borderRadius: BorderRadius.circular(12),
                 border: isSelected
-                    ? Border.all(color: AppColors.accent, width: 2)
+                    ? Border.all(color: context.appColors.accent, width: 2)
                     : Border.all(
-                        color: AppColors.divider.withValues(alpha: 0.4),
+                        color: context.appColors.divider.withValues(alpha: 0.4),
                     ),
-                boxShadow: const [
+                boxShadow: [
                     BoxShadow(
-                        color: AppColors.shadow,
+                        color: context.appColors.shadow,
                         blurRadius: 6,
-                        offset: Offset(0, 2),
+                        offset: const Offset(0, 2),
                     ),
                 ],
             ),
@@ -78,7 +78,7 @@ class DownloadedAlbumCard extends StatelessWidget
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                     // 封面
-                    Expanded(child: _buildCover()),
+                    Expanded(child: _buildCover(context)),
                     // 标题 + 信息
                     Padding(
                         padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
@@ -90,15 +90,15 @@ class DownloadedAlbumCard extends StatelessWidget
                                     album.title,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
-                                        color: AppColors.textPrimary,
+                                        color: context.appColors.textPrimary,
                                         height: 1.25,
                                     ),
                                 ),
                                 const SizedBox(height: 4),
-                                _buildInfoRow(),
+                                _buildInfoRow(context),
                             ],
                         ),
                     ),
@@ -108,7 +108,7 @@ class DownloadedAlbumCard extends StatelessWidget
     }
 
     /// 封面图
-    Widget _buildCover()
+    Widget _buildCover(BuildContext context)
     {
         if (album.coverPath.isNotEmpty && File(album.coverPath).existsSync())
         {
@@ -116,21 +116,21 @@ class DownloadedAlbumCard extends StatelessWidget
                 File(album.coverPath),
                 fit: BoxFit.cover,
                 width: double.infinity,
-                errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                errorBuilder: (_, __, ___) => _buildPlaceholder(context),
             );
         }
-        return _buildPlaceholder();
+        return _buildPlaceholder(context);
     }
 
     /// 封面占位
-    Widget _buildPlaceholder()
+    Widget _buildPlaceholder(BuildContext context)
     {
         return Container(
-            color: AppColors.surfaceVariant,
-            child: const Center(
+            color: context.appColors.surfaceVariant,
+            child: Center(
                 child: Icon(
                     Icons.image_outlined,
-                    color: AppColors.textDisabled,
+                    color: context.appColors.textDisabled,
                     size: 32,
                 ),
             ),
@@ -138,7 +138,7 @@ class DownloadedAlbumCard extends StatelessWidget
     }
 
     /// 信息行：作者、已下载章节数、占用空间、最后阅读
-    Widget _buildInfoRow()
+    Widget _buildInfoRow(BuildContext context)
     {
         final infoParts = <String>[];
         if (album.author.isNotEmpty) infoParts.add(album.author);
@@ -159,15 +159,15 @@ class DownloadedAlbumCard extends StatelessWidget
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 10,
-                color: AppColors.textSecondary,
+                color: context.appColors.textSecondary,
             ),
         );
     }
 
     /// 编辑模式选中标识
-    Widget _buildSelectionBadge()
+    Widget _buildSelectionBadge(BuildContext context)
     {
         return Positioned(
             top: 6,
@@ -179,20 +179,20 @@ class DownloadedAlbumCard extends StatelessWidget
                 decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: isSelected
-                        ? AppColors.accent
-                        : AppColors.surface.withValues(alpha: 0.7),
+                        ? context.appColors.accent
+                        : context.appColors.surface.withValues(alpha: 0.7),
                     border: Border.all(
                         color: isSelected
-                            ? AppColors.accent
-                            : AppColors.textDisabled,
+                            ? context.appColors.accent
+                            : context.appColors.textDisabled,
                         width: 1.5,
                     ),
                 ),
                 child: isSelected
-                    ? const Icon(
+                    ? Icon(
                         Icons.check,
                         size: 16,
-                        color: AppColors.background,
+                        color: context.appColors.background,
                     )
                     : null,
             ),

@@ -20,15 +20,15 @@ class LoadingWidget extends StatelessWidget
             child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                    const CircularProgressIndicator(
-                        color: AppColors.accent,
+                    CircularProgressIndicator(
+                        color: context.appColors.accent,
                         strokeWidth: 3,
                     ),
                     const SizedBox(height: 16),
                     Text(
                         message,
-                        style: const TextStyle(
-                            color: AppColors.textSecondary,
+                        style: TextStyle(
+                            color: context.appColors.textSecondary,
                             fontSize: 14,
                         ),
                     ),

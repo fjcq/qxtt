@@ -108,9 +108,9 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
             constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.7,
             ),
-            decoration: const BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            decoration: BoxDecoration(
+                color: context.appColors.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -118,7 +118,7 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                     _buildDragHandle(),
                     _buildHeader(),
                     if (_needSearch) _buildSearchBar(),
-                    const Divider(color: AppColors.divider, height: 1),
+                    Divider(color: context.appColors.divider, height: 1),
                     Flexible(
                         child: filtered.isEmpty
                             ? _buildEmptyHint()
@@ -139,7 +139,7 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: AppColors.textDisabled,
+                    color: context.appColors.textDisabled,
                     borderRadius: BorderRadius.circular(2),
                 ),
             ),
@@ -153,10 +153,10 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
                 children: [
-                    const Text(
+                    Text(
                         '章节目录',
                         style: TextStyle(
-                            color: AppColors.textPrimary,
+                            color: context.appColors.textPrimary,
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                         ),
@@ -164,8 +164,8 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                     const Spacer(),
                     Text(
                         '共 ${widget.episodes.length} 章',
-                        style: const TextStyle(
-                            color: AppColors.textSecondary,
+                        style: TextStyle(
+                            color: context.appColors.textSecondary,
                             fontSize: 13,
                         ),
                     ),
@@ -180,23 +180,23 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
         return Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: TextField(
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
+                style: TextStyle(
+                    color: context.appColors.textPrimary,
                     fontSize: 14,
                 ),
                 decoration: InputDecoration(
                     hintText: '搜索章节...',
-                    hintStyle: const TextStyle(
-                        color: AppColors.textDisabled,
+                    hintStyle: TextStyle(
+                        color: context.appColors.textDisabled,
                         fontSize: 14,
                     ),
-                    prefixIcon: const Icon(
+                    prefixIcon: Icon(
                         Icons.search,
-                        color: AppColors.textDisabled,
+                        color: context.appColors.textDisabled,
                         size: 20,
                     ),
                     filled: true,
-                    fillColor: AppColors.surfaceVariant,
+                    fillColor: context.appColors.surfaceVariant,
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -215,12 +215,12 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
     /// 构建空提示
     Widget _buildEmptyHint()
     {
-        return const Padding(
-            padding: EdgeInsets.all(32),
+        return Padding(
+            padding: const EdgeInsets.all(32),
             child: Text(
                 '未找到匹配的章节',
                 style: TextStyle(
-                    color: AppColors.textSecondary,
+                    color: context.appColors.textSecondary,
                     fontSize: 14,
                 ),
             ),
@@ -248,7 +248,7 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
     {
         return Material(
             color: isCurrent
-                ? AppColors.accent.withValues(alpha: 0.08)
+                ? context.appColors.accent.withValues(alpha: 0.08)
                 : Colors.transparent,
             child: InkWell(
                 onTap: ()
@@ -278,8 +278,8 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                                     style: TextStyle(
                                         fontSize: 14,
                                         color: isCurrent
-                                            ? AppColors.accent
-                                            : AppColors.textPrimary,
+                                            ? context.appColors.accent
+                                            : context.appColors.textPrimary,
                                         fontWeight: isCurrent
                                             ? FontWeight.w600
                                             : FontWeight.normal,
@@ -294,14 +294,14 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                                         vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                        color: AppColors.accent
+                                        color: context.appColors.accent
                                             .withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(10),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                         '当前',
                                         style: TextStyle(
-                                            color: AppColors.accent,
+                                            color: context.appColors.accent,
                                             fontSize: 11,
                                             fontWeight: FontWeight.w500,
                                         ),
@@ -323,11 +323,11 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
             decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isCurrent
-                    ? AppColors.accent
-                    : AppColors.surfaceVariant,
+                    ? context.appColors.accent
+                    : context.appColors.surfaceVariant,
                 border: isCurrent
                     ? null
-                    : Border.all(color: AppColors.divider, width: 1),
+                    : Border.all(color: context.appColors.divider, width: 1),
             ),
             child: Center(
                 child: Text(
@@ -336,7 +336,7 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                         fontSize: 12,
                         color: isCurrent
                             ? Colors.black
-                            : AppColors.textPrimary,
+                            : context.appColors.textPrimary,
                         fontWeight: isCurrent
                             ? FontWeight.w600
                             : FontWeight.normal,

@@ -52,7 +52,7 @@ class StorageSummaryBar extends StatelessWidget
                 ),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                    color: AppColors.divider.withValues(alpha: 0.5),
+                    color: context.appColors.divider.withValues(alpha: 0.5),
                 ),
             ),
             child: Row(
@@ -62,12 +62,12 @@ class StorageSummaryBar extends StatelessWidget
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                            color: AppColors.accent.withValues(alpha: 0.15),
+                            color: context.appColors.accent.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(
+                        child: Icon(
                             Icons.storage_rounded,
-                            color: AppColors.accent,
+                            color: context.appColors.accent,
                             size: 24,
                         ),
                     ),
@@ -102,9 +102,9 @@ class StorageSummaryBar extends StatelessWidget
                                         : '本子文件均已下载到本地',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 11,
-                                        color: AppColors.textDisabled,
+                                        color: context.appColors.textDisabled,
                                     ),
                                 ),
                             ],
@@ -114,20 +114,20 @@ class StorageSummaryBar extends StatelessWidget
                         IconButton(
                             tooltip: '打开下载目录',
                             onPressed: onMoreTap,
-                            icon: const Icon(
+                            icon: Icon(
                                 Icons.folder_open,
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                             ),
                         ),
                     if (isLoading)
-                        const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8),
+                        Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: AppColors.accent,
+                                    color: context.appColors.accent,
                                 ),
                             ),
                         ),
@@ -157,17 +157,17 @@ class _StatText extends StatelessWidget
                         value,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
+                            color: context.appColors.textPrimary,
                         ),
                     ),
                     Text(
                         label,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11,
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                         ),
                     ),
                 ],
@@ -188,7 +188,7 @@ class _Divider extends StatelessWidget
             width: 1,
             height: 24,
             margin: const EdgeInsets.symmetric(horizontal: 8),
-            color: AppColors.divider,
+            color: context.appColors.divider,
         );
     }
 }

@@ -26,20 +26,20 @@ class AppErrorWidget extends StatelessWidget
                 child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                        const Icon(
-                            Icons.error_outline,
-                            color: AppColors.error,
-                            size: 48,
+                        Icon(
+                        Icons.error_outline,
+                        color: context.appColors.error,
+                        size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: context.appColors.textSecondary,
+                            fontSize: 14,
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                            message,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 14,
-                            ),
-                        ),
+                    ),
                         if (onRetry != null) ...[
                             const SizedBox(height: 16),
                             ElevatedButton.icon(

@@ -22,43 +22,43 @@ class DomainTile extends StatelessWidget
         required this.onDelete,
     });
 
-    Color _speedColor()
+    Color _speedColor(BuildContext context)
     {
-        if (result == null) return AppColors.textDisabled;
+        if (result == null) return context.appColors.textDisabled;
         switch (result!.speedLevel)
         {
-            case 0: return AppColors.success;
-            case 1: return AppColors.accentLight;
-            case 2: return AppColors.warning;
-            default: return AppColors.error;
+            case 0: return context.appColors.success;
+            case 1: return context.appColors.accentLight;
+            case 2: return context.appColors.warning;
+            default: return context.appColors.error;
         }
     }
 
-    Color _healthColor()
+    Color _healthColor(BuildContext context)
     {
         switch (health.healthLevel)
         {
-            case 0: return AppColors.success;
-            case 1: return AppColors.accentLight;
-            case 2: return AppColors.warning;
-            default: return AppColors.textDisabled;
+            case 0: return context.appColors.success;
+            case 1: return context.appColors.accentLight;
+            case 2: return context.appColors.warning;
+            default: return context.appColors.textDisabled;
         }
     }
 
     @override
     Widget build(BuildContext context)
     {
-        final speedColor = _speedColor();
-        final healthColor = _healthColor();
+        final speedColor = _speedColor(context);
+        final healthColor = _healthColor(context);
         return Container(
             margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: context.appColors.surface,
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                     color: result == null
-                        ? AppColors.divider
+                        ? context.appColors.divider
                         : speedColor.withValues(alpha: 0.4),
                     width: 1,
                 ),
@@ -68,11 +68,11 @@ class DomainTile extends StatelessWidget
                     // 拖拽手柄
                     ReorderableDragStartListener(
                         index: index,
-                        child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: Icon(
                                 Icons.drag_indicator,
-                                color: AppColors.textDisabled,
+                                color: context.appColors.textDisabled,
                                 size: 20,
                             ),
                         ),
@@ -83,8 +83,8 @@ class DomainTile extends StatelessWidget
                         alignment: Alignment.center,
                         child: Text(
                             '${index + 1}',
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
+                            style: TextStyle(
+                                color: context.appColors.textSecondary,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                             ),
@@ -111,9 +111,9 @@ class DomainTile extends StatelessWidget
                                             && result!.statusCode != null) ...[
                                             Text(
                                                 'HTTP ${result!.statusCode}',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                     fontSize: 10,
-                                                    color: AppColors.textDisabled,
+                                                    color: context.appColors.textDisabled,
                                                 ),
                                             ),
                                             const SizedBox(width: 8),
@@ -138,9 +138,9 @@ class DomainTile extends StatelessWidget
                                 if (result != null && !result!.isSuccess)
                                     Text(
                                         '错误: ${result!.error}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                             fontSize: 10,
-                                            color: AppColors.error,
+                                            color: context.appColors.error,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -169,8 +169,8 @@ class DomainTile extends StatelessWidget
                         ),
                     // 删除
                     IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            color: AppColors.textDisabled, size: 20),
+                        icon: Icon(Icons.delete_outline,
+                            color: context.appColors.textDisabled, size: 20),
                         onPressed: onDelete,
                         visualDensity: VisualDensity.compact,
                     ),

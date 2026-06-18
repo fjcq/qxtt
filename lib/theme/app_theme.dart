@@ -8,143 +8,168 @@ import 'app_colors.dart';
 class AppTheme
 {
     /// 深色主题（默认）
-    static ThemeData get darkTheme => ThemeData(
+    static ThemeData get darkTheme => _buildTheme(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: AppColors.background,
-        colorScheme: const ColorScheme.dark(
-            primary: AppColors.accent,
-            secondary: AppColors.accentLight,
-            surface: AppColors.surface,
-            error: AppColors.error,
-            onPrimary: AppColors.background,
-            onSecondary: AppColors.background,
-            onSurface: AppColors.textPrimary,
-            onError: AppColors.textPrimary,
-        ),
-        appBarTheme: const AppBarTheme(
-            backgroundColor: AppColors.background,
-            elevation: 0,
-            centerTitle: true,
-            systemOverlayStyle: SystemUiOverlayStyle.light,
-            titleTextStyle: TextStyle(
-                fontFamily: 'NotoSerifSC',
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+        scheme: AppColorsScheme.dark,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+    );
+
+    /// 浅色主题
+    static ThemeData get lightTheme => _buildTheme(
+        brightness: Brightness.light,
+        scheme: AppColorsScheme.light,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+    );
+
+    /// 构建主题（dark / light 共用结构）
+    static ThemeData _buildTheme({
+        required Brightness brightness,
+        required AppColorsScheme scheme,
+        required SystemUiOverlayStyle systemOverlayStyle,
+    })
+    {
+        final isDark = brightness == Brightness.dark;
+        return ThemeData(
+            brightness: brightness,
+            scaffoldBackgroundColor: scheme.background,
+            // 关键：把自定义颜色挂到 ThemeData.extensions，让 context.appColors 可用
+            extensions: <ThemeExtension<dynamic>>[scheme],
+            colorScheme: ColorScheme(
+                brightness: brightness,
+                primary: scheme.accent,
+                secondary: scheme.accentLight,
+                surface: scheme.surface,
+                error: scheme.error,
+                onPrimary: isDark ? scheme.background : scheme.surface,
+                onSecondary: isDark ? scheme.background : scheme.surface,
+                onSurface: scheme.textPrimary,
+                onError: scheme.surface,
             ),
-            iconTheme: IconThemeData(color: AppColors.textPrimary),
-        ),
-        cardTheme: CardThemeData(
-            color: AppColors.surface,
-            elevation: 2,
-            shadowColor: AppColors.shadow,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            appBarTheme: AppBarTheme(
+                backgroundColor: scheme.background,
+                elevation: 0,
+                centerTitle: true,
+                systemOverlayStyle: systemOverlayStyle,
+                titleTextStyle: TextStyle(
+                    fontFamily: 'NotoSerifSC',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.textPrimary,
+                ),
+                iconTheme: IconThemeData(color: scheme.textPrimary),
             ),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: AppColors.surface,
-            indicatorColor: AppColors.accent.withValues(alpha: 0.3),
-            iconTheme: WidgetStateProperty.resolveWith((states)
-            {
-                if (states.contains(WidgetState.selected))
-                {
-                    return const IconThemeData(color: AppColors.accent);
-                }
-                return const IconThemeData(color: AppColors.textSecondary);
-            }),
-            labelTextStyle: WidgetStateProperty.resolveWith((states)
-            {
-                if (states.contains(WidgetState.selected))
-                {
-                    return const TextStyle(fontSize: 12, color: AppColors.accent);
-                }
-                return const TextStyle(fontSize: 12, color: AppColors.textSecondary);
-            }),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: AppColors.background,
+            cardTheme: CardThemeData(
+                color: scheme.surface,
                 elevation: 2,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
+                shadowColor: scheme.shadow,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                ),
+            ),
+            navigationBarTheme: NavigationBarThemeData(
+                backgroundColor: scheme.surface,
+                indicatorColor: scheme.accent.withValues(alpha: 0.3),
+                iconTheme: WidgetStateProperty.resolveWith((states)
+                {
+                    if (states.contains(WidgetState.selected))
+                    {
+                        return IconThemeData(color: scheme.accent);
+                    }
+                    return IconThemeData(color: scheme.textSecondary);
+                }),
+                labelTextStyle: WidgetStateProperty.resolveWith((states)
+                {
+                    if (states.contains(WidgetState.selected))
+                    {
+                        return TextStyle(fontSize: 12, color: scheme.accent);
+                    }
+                    return TextStyle(fontSize: 12, color: scheme.textSecondary);
+                }),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: scheme.accent,
+                    foregroundColor: scheme.background,
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                    ),
+                ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+                style: TextButton.styleFrom(
+                    foregroundColor: scheme.accent,
+                ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+                filled: true,
+                fillColor: scheme.surfaceVariant,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: scheme.accent, width: 2),
+                ),
+                hintStyle: TextStyle(color: scheme.textDisabled),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
                     vertical: 12,
                 ),
+            ),
+            dividerTheme: DividerThemeData(
+                color: scheme.divider,
+                thickness: 1,
+                space: 1,
+            ),
+            chipTheme: ChipThemeData(
+                backgroundColor: scheme.surfaceVariant,
+                selectedColor: scheme.accent,
+                labelStyle: TextStyle(color: scheme.textPrimary),
+                secondaryLabelStyle: TextStyle(color: scheme.background),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                ),
+            ),
+            progressIndicatorTheme: ProgressIndicatorThemeData(
+                color: scheme.accent,
+                linearTrackColor: scheme.surfaceVariant,
+            ),
+            snackBarTheme: SnackBarThemeData(
+                backgroundColor: scheme.surface,
+                contentTextStyle: TextStyle(color: scheme.textPrimary),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                 ),
-                textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                behavior: SnackBarBehavior.floating,
+            ),
+            dialogTheme: DialogThemeData(
+                backgroundColor: scheme.surface,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                 ),
             ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.accent,
+            pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                    TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                    TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+                    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                    TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+                },
             ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: AppColors.surfaceVariant,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.accent, width: 2),
-            ),
-            hintStyle: const TextStyle(color: AppColors.textDisabled),
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-            ),
-        ),
-        dividerTheme: const DividerThemeData(
-            color: AppColors.divider,
-            thickness: 1,
-            space: 1,
-        ),
-        chipTheme: ChipThemeData(
-            backgroundColor: AppColors.surfaceVariant,
-            selectedColor: AppColors.accent,
-            labelStyle: const TextStyle(color: AppColors.textPrimary),
-            secondaryLabelStyle: const TextStyle(color: AppColors.background),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-            ),
-        ),
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-            color: AppColors.accent,
-            linearTrackColor: AppColors.surfaceVariant,
-        ),
-        snackBarTheme: SnackBarThemeData(
-            backgroundColor: AppColors.surface,
-            contentTextStyle: const TextStyle(color: AppColors.textPrimary),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-            ),
-            behavior: SnackBarBehavior.floating,
-        ),
-        dialogTheme: DialogThemeData(
-            backgroundColor: AppColors.surface,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-            ),
-        ),
-        pageTransitionsTheme: const PageTransitionsTheme(
-            builders: {
-                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
-            },
-        ),
-    );
+        );
+    }
 
     // 私有构造函数
     AppTheme._();

@@ -17,19 +17,19 @@ Future<bool> showConfirmDialog({
         builder: (ctx)
         {
             return AlertDialog(
-                backgroundColor: AppColors.surface,
+                backgroundColor: ctx.appColors.surface,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                 ),
                 title: Text(title,
-                    style: const TextStyle(color: AppColors.textPrimary)),
+                    style: TextStyle(color: ctx.appColors.textPrimary)),
                 content: Text(message,
-                    style: const TextStyle(color: AppColors.textSecondary)),
+                    style: TextStyle(color: ctx.appColors.textSecondary)),
                 actions: [
                     TextButton(
                         onPressed: () => Navigator.of(ctx).pop(false),
                         child: Text(cancelText,
-                            style: const TextStyle(color: AppColors.textSecondary)),
+                            style: TextStyle(color: ctx.appColors.textSecondary)),
                     ),
                     TextButton(
                         onPressed: () => Navigator.of(ctx).pop(true),
@@ -37,8 +37,8 @@ Future<bool> showConfirmDialog({
                             confirmText,
                             style: TextStyle(
                                 color: danger
-                                    ? AppColors.error
-                                    : AppColors.accent,
+                                    ? ctx.appColors.error
+                                    : ctx.appColors.accent,
                                 fontWeight: FontWeight.w600,
                             ),
                         ),

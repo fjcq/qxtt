@@ -40,9 +40,9 @@ class DownloadProgress extends StatelessWidget
                                 statusText,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                    color: context.appColors.textSecondary,
                                 ),
                             ),
                         ),
@@ -51,9 +51,9 @@ class DownloadProgress extends StatelessWidget
                                 padding: const EdgeInsets.only(left: 8),
                                 child: Text(
                                     speedText,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 12,
-                                        color: AppColors.accent,
+                                        color: context.appColors.accent,
                                         fontWeight: FontWeight.w500,
                                     ),
                                 ),
@@ -62,9 +62,9 @@ class DownloadProgress extends StatelessWidget
                             padding: const EdgeInsets.only(left: 8),
                             child: Text(
                                 countText,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                    color: context.appColors.textSecondary,
                                 ),
                             ),
                         ),
@@ -77,11 +77,11 @@ class DownloadProgress extends StatelessWidget
                     child: LinearProgressIndicator(
                         value: progress,
                         minHeight: 6,
-                        backgroundColor: AppColors.surfaceVariant,
+                        backgroundColor: context.appColors.surfaceVariant,
                         valueColor: AlwaysStoppedAnimation<Color>(
                             progress >= 1.0
-                                ? AppColors.success
-                                : AppColors.accent,
+                                ? context.appColors.success
+                                : context.appColors.accent,
                         ),
                     ),
                 ),

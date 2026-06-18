@@ -1,19 +1,16 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 
-import '../common/app_logger.dart';
 import '../jm/jm_client.dart';
 import '../jm/jm_entity.dart';
-import '../jm/jm_image.dart';
 import '../../data/database/task_dao.dart';
 import '../../data/models/download_task_model.dart';
 import '../../utils/library_storage.dart';
 import '../../utils/path_helper.dart';
+import 'concurrent_image_downloader.dart';
 
 part 'download_progress_event.dart';
 part 'download_status_emitter.dart';
@@ -26,17 +23,32 @@ part 'download_photo_handler.dart';
 ///   - [_DownloadStatusEmitter]：进度/状态事件发射
 ///   - [_AlbumDownloadHandler]：整本漫画下载
 ///   - [_PhotoDownloadHandler]：单章漫画下载
+///
+/// 单个任务内部采用信号量并发下载所有图片（章节内与章节间不区分，
+/// 整本漫画的 N 张图一起抢 [_imageThreadCount] 个许可），与
+/// [SmartDownloadService] 共享 [concurrent_image_downloader] 中的并发原语。
+///
+/// 暂停/继续：
+///   - [pauseTask] 取消正在进行的 HTTP 请求，保留已下载的部分文件，
+///     并把任务状态置为 `paused`。
+///   - [resumeTask] 重新派发任务；下载流程在派发时会先扫描本地已有图片并跳过，
+///     实现"图片级断点续传"。
 class DownloadService
 {
-    /// 日志记录器（带文件输出，方便 Windows release 模式下排查问题）
-    static final AppLogger _logger = AppLogger();
-
     final JmClient _client;
     final TaskDao _taskDao;
     final String _downloadDir;
 
+    /// 图片级并发数：同时下载的图片数（整本内不区分章节）。
+    /// 可被 [imageThreadCount] setter 动态调整，与阅读侧共用同一上限 1~10。
+    int _imageThreadCount;
+
     /// 活跃的下载任务取消器
     final Map<String, CancelToken> _cancelTokens = {};
+
+    /// 处于暂停状态的任务 ID（pause 后被 cancel 移除但状态置为 paused，
+    /// resume 时据此判断是续传而非新增）
+    final Set<String> _pausedTasks = {};
 
     /// 下载进度流控制器
     final _progressController = StreamController<DownloadProgressEvent>.broadcast();
@@ -55,7 +67,18 @@ class DownloadService
         int photoThreadCount = 3,
     })  : _client = client,
           _taskDao = taskDao,
-          _downloadDir = downloadDir;
+          _downloadDir = downloadDir,
+          _imageThreadCount = imageThreadCount.clamp(1, 10);
+
+    /// 当前生效的图片并发数
+    int get imageThreadCount => _imageThreadCount;
+
+    /// 动态调整图片并发数（仅影响此后新建的下载批次内的并发上限；
+    /// 已经在跑的批次信号量不变，避免中断进行中的下载）
+    set imageThreadCount(int value)
+    {
+        _imageThreadCount = value.clamp(1, 10);
+    }
 
     /// 创建下载任务
     Future<DownloadTaskModel> createTask(
@@ -100,6 +123,34 @@ class DownloadService
         }
     }
 
+    /// 暂停下载任务
+    /// - 取消正在进行的 HTTP 请求
+    /// - 状态置为 `paused`，保留本地已下载的部分文件
+    /// - 不会触发自动归档
+    void pauseTask(String taskId)
+    {
+        // 标记为暂停任务；resume 时据此重派
+        _pausedTasks.add(taskId);
+        // 取消 in-flight 请求
+        final cancelToken = _cancelTokens[taskId];
+        if (cancelToken != null && !cancelToken.isCancelled)
+        {
+            cancelToken.cancel('用户暂停下载');
+        }
+    }
+
+    /// 清除任务的暂停标记
+    ///
+    /// 必须在重新派发下载（resume / retry / 启动恢复）之前调用，
+    /// 否则 [onPauseSignal] 会把本次下载误判为"需要暂停"并立即取消。
+    void clearPausedFlag(String taskId)
+    {
+        _pausedTasks.remove(taskId);
+    }
+
+    /// 是否处于暂停态
+    bool isPaused(String taskId) => _pausedTasks.contains(taskId);
+
     /// 释放资源
     void dispose()
     {
@@ -120,51 +171,5 @@ class DownloadService
             result = 'unnamed';
         }
         return result;
-    }
-
-    /// 读取已下载的加密图片，解密后覆盖保存
-    Future<void> _decodeAndSave(
-        String savePath,
-        int scrambleId,
-        int aid,
-        String filename,
-    ) async
-    {
-        try
-        {
-            final okPath = '$savePath.ok';
-            try
-            {
-                if (File(okPath).existsSync())
-                {
-                    await File(okPath).delete();
-                }
-            }
-            catch (_)
-            {
-            }
-
-            final bytes = await File(savePath).readAsBytes();
-            _logger.d('[解密] 开始: $filename, bytes=${bytes.length}');
-            final decoded = await JmImage.decode(
-                Uint8List.fromList(bytes),
-                scrambleId,
-                aid,
-                filename,
-            );
-            await File(savePath).writeAsBytes(decoded);
-            await File(okPath).writeAsString('');
-            _logger.d('[解密] 成功: $filename, before=${bytes.length}, after=${decoded.length}');
-        }
-        catch (e, st)
-        {
-            _logger.w('[解密] 失败: $filename, 错误: $e');
-            developer.log(
-                'JmImage decode failed for $filename',
-                name: 'DownloadService',
-                error: e,
-                stackTrace: st,
-            );
-        }
     }
 }

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/app_version.dart';
 import '../providers/config_provider.dart';
 import '../data/models/app_config_model.dart';
-import '../core/jm/jm_image.dart';
 import '../theme/app_colors.dart';
 
 /// 设置页
@@ -23,68 +23,52 @@ class SettingsPage extends ConsumerWidget
             body: ListView(
                 children: [
                     // ===== 下载设置 =====
-                    _buildSectionHeader('下载设置'),
+                    _buildSectionHeader(context, '下载设置'),
                     ListTile(
-                        leading: const Icon(Icons.folder_outlined, color: AppColors.accent),
+                        leading: Icon(Icons.folder_outlined, color: context.appColors.accent),
                         title: const Text('下载目录'),
                         subtitle: Text(
                             config.downloadDir.isEmpty ? '默认目录' : config.downloadDir,
-                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            style: TextStyle(fontSize: 12, color: context.appColors.textSecondary),
                         ),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => _showDownloadDirPicker(context, ref),
                     ),
                     ListTile(
-                        leading: const Icon(Icons.image_outlined, color: AppColors.accent),
-                        title: const Text('图片解密'),
-                        subtitle: const Text('下载时自动解密图片', style: TextStyle(fontSize: 12)),
-                        trailing: Switch(
-                            value: config.decodeImage,
-                            activeThumbColor: AppColors.accent,
-                            onChanged: (value) => ref.read(configProvider.notifier).updateConfig(
-                                config.copyWith(decodeImage: value),
-                            ),
-                        ),
-                    ),
-                    ListTile(
-                        leading: const Icon(Icons.cleaning_services_outlined, color: AppColors.accent),
-                        title: const Text('清理解密缓存'),
-                        subtitle: const Text('清理在线观看时缓存的解密图片；算法更新后建议执行', style: TextStyle(fontSize: 12)),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
-                        onTap: () => _clearDecodedCache(context),
-                    ),
-                    ListTile(
-                        leading: const Icon(Icons.settings_outlined, color: AppColors.accent),
+                        leading: Icon(Icons.settings_outlined, color: context.appColors.accent),
                         title: const Text('图片线程数'),
-                        subtitle: Text('${config.imageThreadCount}'),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        subtitle: Text(
+                            '${config.imageThreadCount}（影响手动下载、阅读预下载、阅读即时下载）',
+                            style: TextStyle(fontSize: 12, color: context.appColors.textSecondary),
+                        ),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => _showThreadCountPicker(
                             context, ref, 'imageThreadCount', config.imageThreadCount,
                         ),
                     ),
                     ListTile(
-                        leading: const Icon(Icons.cached, color: AppColors.accent),
+                        leading: Icon(Icons.cached, color: context.appColors.accent),
                         title: const Text('预加载页数'),
                         subtitle: Text('${config.preloadPageCount}'),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => _showPreloadPageCountPicker(context, ref, config),
                     ),
 
                     // ===== 网络设置 =====
-                    _buildSectionHeader('网络设置'),
+                    _buildSectionHeader(context, '网络设置'),
                     ListTile(
-                        leading: const Icon(Icons.dns_outlined, color: AppColors.accent),
+                        leading: Icon(Icons.dns_outlined, color: context.appColors.accent),
                         title: const Text('域名管理'),
                         subtitle: const Text('切换/测试/获取最新图片与 API 域名', style: TextStyle(fontSize: 12)),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => context.push('/settings/domains'),
                     ),
                     ListTile(
-                        leading: const Icon(Icons.vpn_lock_outlined, color: AppColors.accent),
+                        leading: Icon(Icons.vpn_lock_outlined, color: context.appColors.accent),
                         title: const Text('使用代理'),
                         trailing: Switch(
                             value: config.useProxy,
-                            activeThumbColor: AppColors.accent,
+                            activeThumbColor: context.appColors.accent,
                             onChanged: (value) => ref.read(configProvider.notifier).updateProxy(
                                 url: config.proxyUrl,
                                 enabled: value,
@@ -93,44 +77,40 @@ class SettingsPage extends ConsumerWidget
                     ),
                     if (config.useProxy)
                         ListTile(
-                            leading: const Icon(Icons.link, color: AppColors.accent),
+                            leading: Icon(Icons.link, color: context.appColors.accent),
                             title: const Text('代理地址'),
                             subtitle: Text(
                                 config.proxyUrl.isEmpty ? '未设置' : config.proxyUrl,
                                 style: const TextStyle(fontSize: 12),
                             ),
-                            trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                            trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                             onTap: () => _showProxyEditor(context, ref, config),
                         ),
 
                     // ===== 显示设置 =====
-                    _buildSectionHeader('显示设置'),
+                    _buildSectionHeader(context, '显示设置'),
                     ListTile(
-                        leading: const Icon(Icons.dark_mode_outlined, color: AppColors.accent),
+                        leading: Icon(Icons.dark_mode_outlined, color: context.appColors.accent),
                         title: const Text('主题模式'),
                         subtitle: Text(_getThemeModeLabel(config.themeMode)),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => _showThemeModePicker(context, ref, config),
                     ),
                     ListTile(
-                        leading: const Icon(Icons.auto_stories, color: AppColors.accent),
+                        leading: Icon(Icons.auto_stories, color: context.appColors.accent),
                         title: const Text('默认阅读模式'),
                         subtitle: Text(_getReaderModeLabel(config.readerMode)),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => _showReaderModePicker(context, ref, config),
                     ),
 
                     // ===== 关于 =====
-                    _buildSectionHeader('关于'),
-                    const ListTile(
-                        leading: Icon(Icons.info_outline, color: AppColors.accent),
-                        title: Text('版本'),
-                        subtitle: Text('1.0.0'),
-                    ),
+                    _buildSectionHeader(context, '关于'),
+                    const _VersionTile(),
                     ListTile(
-                        leading: const Icon(Icons.code, color: AppColors.accent),
+                        leading: Icon(Icons.code, color: context.appColors.accent),
                         title: const Text('下载管理'),
-                        trailing: const Icon(Icons.chevron_right, color: AppColors.textDisabled),
+                        trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => context.push('/downloads'),
                     ),
                 ],
@@ -139,16 +119,16 @@ class SettingsPage extends ConsumerWidget
     }
 
     /// 构建分组标题
-    Widget _buildSectionHeader(String title)
+    Widget _buildSectionHeader(BuildContext context, String title)
     {
         return Padding(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
             child: Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.accent,
+                    color: context.appColors.accent,
                 ),
             ),
         );
@@ -231,7 +211,7 @@ class SettingsPage extends ConsumerWidget
                             children: [
                                 Text('$count'),
                                 if (count == current)
-                                    const Icon(Icons.check, color: AppColors.accent, size: 20),
+                                    Icon(Icons.check, color: context.appColors.accent, size: 20),
                             ],
                         ),
                     ),
@@ -294,7 +274,7 @@ class SettingsPage extends ConsumerWidget
                             children: [
                                 Text(_getThemeModeLabel(mode)),
                                 if (mode == config.themeMode)
-                                    const Icon(Icons.check, color: AppColors.accent, size: 20),
+                                    Icon(Icons.check, color: context.appColors.accent, size: 20),
                             ],
                         ),
                     ),
@@ -322,7 +302,7 @@ class SettingsPage extends ConsumerWidget
                             children: [
                                 Text(_getReaderModeLabel(mode)),
                                 if (mode == config.readerMode)
-                                    const Icon(Icons.check, color: AppColors.accent, size: 20),
+                                    Icon(Icons.check, color: context.appColors.accent, size: 20),
                             ],
                         ),
                     ),
@@ -355,7 +335,7 @@ class SettingsPage extends ConsumerWidget
                             children: [
                                 Text(count == 0 ? '关闭' : '前后各 $count 页'),
                                 if (count == config.preloadPageCount)
-                                    const Icon(Icons.check, color: AppColors.accent, size: 20),
+                                    Icon(Icons.check, color: context.appColors.accent, size: 20),
                             ],
                         ),
                     ),
@@ -363,37 +343,24 @@ class SettingsPage extends ConsumerWidget
             ),
         );
     }
+}
 
-    /// 清理解密缓存（在线观看缓存）
-    /// 修改解密算法或参数后，旧缓存会用错 aid 解密过的图，导致仍然错位
-    Future<void> _clearDecodedCache(BuildContext context) async
+/// 关于页"版本"项
+/// 从 [AppVersion] 常量读取版本号（构建时通过 --dart-define 注入）
+class _VersionTile extends StatelessWidget
+{
+    const _VersionTile();
+
+    @override
+    Widget build(BuildContext context)
     {
-        final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-                title: const Text('清理解密缓存'),
-                content: const Text('将清理在线观看时缓存的所有解密图片。\n'
-                    '下次观看时会重新下载并解密。\n'
-                    '已下载到本地的图片不受影响。'),
-                actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('取消'),
-                    ),
-                    ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('清理'),
-                    ),
-                ],
+        return ListTile(
+            leading: const Icon(Icons.info_outline, color: AppColors.accent),
+            title: const Text('版本'),
+            subtitle: Text(
+                AppVersion.displayLabel,
+                style: const TextStyle(fontSize: 12),
             ),
-        );
-        if (confirmed != true) return;
-        if (!context.mounted) return;
-
-        await JmImageCacheManager.clearDecoded();
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('解密缓存已清理')),
         );
     }
 }

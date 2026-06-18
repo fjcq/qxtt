@@ -32,13 +32,13 @@ class EpisodeList extends StatelessWidget
     {
         if (episodes.isEmpty)
         {
-            return const Center(
+            return Center(
                 child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(32),
                     child: Text(
                         '暂无章节',
                         style: TextStyle(
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                             fontSize: 14,
                         ),
                     ),
@@ -50,8 +50,8 @@ class EpisodeList extends StatelessWidget
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: episodes.length,
-            separatorBuilder: (_, __) => const Divider(
-                color: AppColors.divider,
+            separatorBuilder: (_, __) => Divider(
+                color: context.appColors.divider,
                 height: 1,
             ),
             itemBuilder: (context, index)
@@ -66,12 +66,12 @@ class EpisodeList extends StatelessWidget
                     ),
                     leading: CircleAvatar(
                         radius: 16,
-                        backgroundColor: AppColors.surfaceVariant,
+                        backgroundColor: context.appColors.surfaceVariant,
                         child: Text(
                             episode.index,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 12,
-                                color: AppColors.textPrimary,
+                                color: context.appColors.textPrimary,
                             ),
                         ),
                     ),
@@ -79,9 +79,9 @@ class EpisodeList extends StatelessWidget
                         episode.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 14,
-                            color: AppColors.textPrimary,
+                            color: context.appColors.textPrimary,
                         ),
                     ),
                     trailing: Row(
@@ -89,21 +89,21 @@ class EpisodeList extends StatelessWidget
                         children: [
                             // 已下载标识
                             if (isDownloaded)
-                                const Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 4),
+                                Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
                                     child: Icon(
                                         Icons.check_circle,
                                         size: 18,
-                                        color: AppColors.success,
+                                        color: context.appColors.success,
                                     ),
                                 ),
                             // 阅读按钮
                             if (onRead != null)
                                 IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                         Icons.menu_book_outlined,
                                         size: 20,
-                                        color: AppColors.accent,
+                                        color: context.appColors.accent,
                                     ),
                                     onPressed: () => onRead!(episode),
                                     tooltip: '阅读',
@@ -111,10 +111,10 @@ class EpisodeList extends StatelessWidget
                             // 下载按钮：已下载则不显示，避免重复下载
                             if (onDownload != null && !isDownloaded)
                                 IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                         Icons.download_outlined,
                                         size: 20,
-                                        color: AppColors.textSecondary,
+                                        color: context.appColors.textSecondary,
                                     ),
                                     onPressed: () => onDownload!(episode),
                                     tooltip: '下载',

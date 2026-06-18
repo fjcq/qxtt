@@ -28,6 +28,10 @@ class DownloadProgressEvent
     /// 仅在 status='completed' 时填充
     final List<String> downloadedPhotoIds;
 
+    /// 已有部分图片下载的章节 photoId 列表
+    /// 用于"边下边看"：任意一张图下载成功即把对应章节加入此列表
+    final List<String> partialDownloadedPhotoIds;
+
     /// 本子作者（仅 album 任务且完成时填充）
     final String author;
 
@@ -52,6 +56,7 @@ class DownloadProgressEvent
         required this.status,
         required this.message,
         this.downloadedPhotoIds = const [],
+        this.partialDownloadedPhotoIds = const [],
         this.author = '',
         this.pageCount = 0,
         this.episodeCount = 0,

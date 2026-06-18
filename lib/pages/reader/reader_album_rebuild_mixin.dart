@@ -64,6 +64,50 @@ mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMix
         return paths;
     }
 
+    /// 获取指定章节内第 [pageIndex] 页的预期本地文件绝对路径
+    ///
+    /// 章节信息 [albumDetail] 已就绪且 [_albumDetailFromApi] 为 true 时，
+    /// 根据本子标题与章节序号构造标准下载路径；否则尝试从 [localDirs] / 直传目录兜底。
+    /// 返回 `null` 表示无法确定预期路径（需调用方走网络）。
+    String? getExpectedLocalPathForPage(
+        String photoId,
+        int pageIndex,
+        String? downloadRoot,
+    ) {
+        if (downloadRoot == null) return null;
+
+        if (albumDetail != null && _albumDetailFromApi) {
+            final episode = findEpisodeInAlbum(photoId);
+            if (episode != null) {
+                return PathHelper.getPagePath(
+                    downloadRoot,
+                    PathHelper.sanitizeFileName(albumDetail!.name),
+                    PathHelper.sanitizeFileName(episode.index),
+                    pageIndex,
+                );
+            }
+        }
+
+        final localDirs = _localEpisodeDirs;
+        if (localDirs != null && localDirs.containsKey(photoId)) {
+            final dir = localDirs[photoId]!;
+            final seq = (pageIndex + 1).toString().padLeft(5, '0');
+            return '$dir${Platform.pathSeparator}$seq.jpg';
+        }
+
+        // 单章节下载（直传 photoId 目录）
+        final sep = Platform.pathSeparator;
+        final seq = (pageIndex + 1).toString().padLeft(5, '0');
+        return '$downloadRoot$sep$photoId$sep$seq.jpg';
+    }
+
+    /// 判断指定页码对应的本地文件是否已下载完成（包含 .ok 标记）
+    bool isPageDownloaded(String? expectedPath) {
+        if (expectedPath == null || expectedPath.isEmpty) return false;
+        return File(expectedPath).existsSync() &&
+            File('$expectedPath.ok').existsSync();
+    }
+
     /// 扫描目录中的图片文件（按文件名排序）
     List<String> scanDirectoryForImages(String dirPath) {
         final dir = Directory(dirPath);

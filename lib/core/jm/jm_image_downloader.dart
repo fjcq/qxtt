@@ -140,6 +140,9 @@ class _JmImageDownloader extends _JmApiClient
     ///   并以 append 模式打开文件继续写入。
     /// - 若本地大小 == 远程大小，认为已下载完成，方法立即返回 false 表示未发起下载。
     /// - [onProgress] 接收 (已接收字节, 总字节)。总字节在断点续传时为远程总大小。
+    /// - [startDomainIndex] 可指定起始域名在 `_imageDomainList` 中的下标，
+    ///   用于多线程并发时让不同线程从不同域名开始尝试，避免所有线程都扎堆在同一个域名。
+    ///   默认从 0 开始；指定后会从该下标起遍历完一圈域名。
     /// - 返回 true 表示本次确实发起了网络请求；false 表示文件已完整无需下载。
     /// - 当所有域名都失败时，会自动调用 [updateApiDomains] 刷新一次域名并再尝试一轮。
     Future<bool> downloadImageToFile(
@@ -148,6 +151,7 @@ class _JmImageDownloader extends _JmApiClient
         String savePath, {
         CancelToken? cancelToken,
         void Function(int received, int total)? onProgress,
+        int? startDomainIndex,
     }) async
     {
         try
@@ -156,6 +160,7 @@ class _JmImageDownloader extends _JmApiClient
                 photoId, filename, savePath,
                 cancelToken: cancelToken,
                 onProgress: onProgress,
+                startDomainIndex: startDomainIndex,
             );
         }
         on Exception catch (e)
@@ -175,6 +180,7 @@ class _JmImageDownloader extends _JmApiClient
                 cancelToken: cancelToken,
                 onProgress: onProgress,
                 onRetryAfterDomainUpdate: true,
+                startDomainIndex: startDomainIndex,
             );
         }
     }
@@ -187,14 +193,25 @@ class _JmImageDownloader extends _JmApiClient
         CancelToken? cancelToken,
         void Function(int received, int total)? onProgress,
         bool onRetryAfterDomainUpdate = false,
+        int? startDomainIndex,
     }) async
     {
         const maxRetries = 3;
-        final domains = _imageDomainList.toList();
+        final allDomains = _imageDomainList.toList();
+        if (allDomains.isEmpty)
+        {
+            throw Exception('图片域名列表为空');
+        }
+        // 让多线程并发时各自从不同域名开始尝试，避免扎堆
+        final offset = (startDomainIndex ?? 0) % allDomains.length;
+        final domains = <String>[
+            ...allDomains.sublist(offset),
+            ...allDomains.sublist(0, offset),
+        ];
         if (onRetryAfterDomainUpdate)
         {
             _log('image', '使用刷新后域名重试(toFile): $photoId/$filename, '
-                '${domains.length} 个域名');
+                '${domains.length} 个域名, 起始 offset=$offset');
         }
         Object? lastError;
 

@@ -109,23 +109,23 @@ class _ActionButton extends StatelessWidget
             child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
+                    color: context.appColors.surfaceVariant,
                     borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                         if (loading)
-                            const SizedBox(
+                            SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: AppColors.accent,
+                                    color: context.appColors.accent,
                                 ),
                             )
                         else
-                            Icon(icon, size: 16, color: AppColors.accent),
+                            Icon(icon, size: 16, color: context.appColors.accent),
                         const SizedBox(width: 6),
                         Text(label, style: const TextStyle(fontSize: 12)),
                     ],

@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/database/task_dao.dart';
@@ -12,7 +10,7 @@ import '../../utils/library_storage.dart';
 import '../../utils/path_helper.dart';
 import '../common/app_logger.dart';
 import '../jm/jm_client.dart';
-import '../jm/jm_image.dart';
+import '../download/concurrent_image_downloader.dart';
 import 'network_monitor.dart';
 
 /// 智能下载进度事件
@@ -46,43 +44,12 @@ class SmartDownloadProgress
     });
 }
 
-/// 并发信号量
-class _Semaphore
-{
-    final int maxPermits;
-    int _permits;
-    final _waiters = <Completer<void>>[];
-
-    _Semaphore(this.maxPermits) : _permits = maxPermits;
-
-    Future<void> acquire()
-    {
-        if (_permits > 0)
-        {
-            _permits--;
-            return Future.value();
-        }
-        final completer = Completer<void>();
-        _waiters.add(completer);
-        return completer.future;
-    }
-
-    void release()
-    {
-        if (_waiters.isNotEmpty)
-        {
-            _waiters.removeAt(0).complete();
-        }
-        else
-        {
-            _permits++;
-        }
-    }
-}
-
 /// 智能下载服务
 /// 在线阅读时自动将当前章节以与主动下载完全一致的格式保存到本地，
 /// 生成 .ok 标记并写入 TaskDao，使其可在下载管理与书架中正常识别。
+///
+/// 并发原语（信号量、域名轮询、单图下载+解密）共用
+/// [concurrent_image_downloader.dart]，与 [DownloadService] 整本下载保持一致。
 class SmartDownloadService
 {
     static final AppLogger _logger = AppLogger();
@@ -179,44 +146,65 @@ class SmartDownloadService
                 episodeIndex: episodeIndex,
             );
 
-            final completed = <int>{};
-            final semaphore = _Semaphore(_imageThreadCount);
-            final futures = <Future<void>>[];
             final aid = int.tryParse(photoId) ?? 0;
+            final semaphore = DownloadSemaphore(_imageThreadCount);
+            final rotator = DomainRotator(_client.imageDomainList.length);
+            final completed = <int>{};
+            final futures = <Future<void>>[];
+
+            Future<void> reportProgress() async
+            {
+                final doneCount = completed.length;
+                final progress = totalImages > 0
+                    ? doneCount / totalImages
+                    : 0.0;
+                await _taskDao.updateTaskProgress(
+                    task.taskId, doneCount, totalImages, progress,
+                );
+                _emit(
+                    task.taskId,
+                    doneCount,
+                    totalImages,
+                    progress,
+                    'running',
+                    '智能下载中',
+                );
+            }
+
+            Future<void> downloadOne(int pageIndex, String filename) async
+            {
+                await semaphore.acquire();
+                try
+                {
+                    if (cancelToken.isCancelled) return;
+                    final result = await downloadOneImageWithDecode(
+                        client: _client,
+                        cancelToken: cancelToken,
+                        photoId: photoId,
+                        filename: filename,
+                        pageIndex: pageIndex,
+                        saveDir: saveDir,
+                        scrambleId: scrambleId,
+                        aid: aid,
+                        rotator: rotator,
+                    );
+                    if (!result.success)
+                    {
+                        _logger.w('[智能下载] $photoId/$filename 失败');
+                    }
+                    completed.add(pageIndex);
+                    await reportProgress();
+                }
+                finally
+                {
+                    semaphore.release();
+                }
+            }
 
             for (var i = 0; i < photoDetail.pageArr.length; i++)
             {
                 if (cancelToken.isCancelled) break;
-
-                futures.add(_downloadOne(
-                    semaphore: semaphore,
-                    cancelToken: cancelToken,
-                    photoId: photoId,
-                    filename: photoDetail.pageArr[i],
-                    pageIndex: i,
-                    saveDir: saveDir,
-                    scrambleId: scrambleId,
-                    aid: aid,
-                    onCompleted: ()
-                    {
-                        completed.add(i);
-                        final doneCount = completed.length;
-                        final progress = totalImages > 0
-                            ? doneCount / totalImages
-                            : 0.0;
-                        _taskDao.updateTaskProgress(
-                            task.taskId, doneCount, totalImages, progress,
-                        );
-                        _emit(
-                            task.taskId,
-                            doneCount,
-                            totalImages,
-                            progress,
-                            'running',
-                            '智能下载中',
-                        );
-                    },
-                ));
+                futures.add(downloadOne(i, photoDetail.pageArr[i]));
             }
 
             await Future.wait(futures);
@@ -347,95 +335,6 @@ class SmartDownloadService
 
         await Directory(saveDir).create(recursive: true);
         return saveDir;
-    }
-
-    /// 单张图片下载与解密
-    Future<void> _downloadOne({
-        required _Semaphore semaphore,
-        required CancelToken cancelToken,
-        required String photoId,
-        required String filename,
-        required int pageIndex,
-        required String saveDir,
-        required int scrambleId,
-        required int aid,
-        required VoidCallback onCompleted,
-    }) async
-    {
-        await semaphore.acquire();
-        try
-        {
-            if (cancelToken.isCancelled) return;
-
-            final savePath = '$saveDir/${(pageIndex + 1).toString().padLeft(5, '0')}.jpg';
-            final okPath = '$savePath.ok';
-
-            // 已存在且有效则跳过
-            if (File(savePath).existsSync() && File(okPath).existsSync())
-            {
-                onCompleted();
-                return;
-            }
-
-            final downloaded = await _client.downloadImageToFile(
-                photoId,
-                filename,
-                savePath,
-                cancelToken: cancelToken,
-            );
-
-            final f = File(savePath);
-            final needDecodeAnyway = !downloaded &&
-                f.existsSync() &&
-                JmImage.isUndecodedWebp(savePath);
-
-            if (downloaded || needDecodeAnyway)
-            {
-                await _decodeAndSave(savePath, scrambleId, aid, filename);
-            }
-
-            onCompleted();
-        }
-        catch (e)
-        {
-            _logger.w('[智能下载] $photoId/$filename 失败: $e');
-        }
-        finally
-        {
-            semaphore.release();
-        }
-    }
-
-    /// 解密并覆盖保存，同时生成 .ok 标记
-    Future<void> _decodeAndSave(
-        String savePath,
-        int scrambleId,
-        int aid,
-        String filename,
-    ) async
-    {
-        try
-        {
-            final okPath = '$savePath.ok';
-            if (File(okPath).existsSync())
-            {
-                await File(okPath).delete();
-            }
-
-            final bytes = await File(savePath).readAsBytes();
-            final decoded = await JmImage.decode(
-                Uint8List.fromList(bytes),
-                scrambleId,
-                aid,
-                filename,
-            );
-            await File(savePath).writeAsBytes(decoded);
-            await File(okPath).writeAsString('');
-        }
-        catch (e)
-        {
-            _logger.w('[智能下载] 解密失败: $filename, 错误: $e');
-        }
     }
 
     /// 更新章节元数据与封面

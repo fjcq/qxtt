@@ -25,15 +25,15 @@ class DomainTestProgress extends StatelessWidget
         final completed = (progress * total).round();
         return Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: AppColors.surfaceVariant,
+            color: context.appColors.surfaceVariant,
             child: Row(
                 children: [
-                    const SizedBox(
+                    SizedBox(
                         width: 14,
                         height: 14,
                         child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: AppColors.accent,
+                            color: context.appColors.accent,
                         ),
                     ),
                     const SizedBox(width: 10),
@@ -48,8 +48,8 @@ class DomainTestProgress extends StatelessWidget
                                 const SizedBox(height: 4),
                                 LinearProgressIndicator(
                                     value: progress,
-                                    backgroundColor: AppColors.surface,
-                                    color: AppColors.accent,
+                                    backgroundColor: context.appColors.surface,
+                                    color: context.appColors.accent,
                                     minHeight: 3,
                                 ),
                             ],
@@ -57,7 +57,7 @@ class DomainTestProgress extends StatelessWidget
                     ),
                     IconButton(
                         icon: const Icon(Icons.close, size: 18),
-                        color: AppColors.textDisabled,
+                        color: context.appColors.textDisabled,
                         onPressed: onCancel,
                         visualDensity: VisualDensity.compact,
                     ),

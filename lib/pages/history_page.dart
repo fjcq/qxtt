@@ -64,21 +64,21 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                         Icon(
                             Icons.history,
                             size: 64,
-                            color: AppColors.textDisabled.withValues(alpha: 0.5),
+                            color: context.appColors.textDisabled.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                             '暂无浏览记录',
                             style: TextStyle(
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                                 fontSize: 16,
                             ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                             '浏览漫画后会自动记录',
                             style: TextStyle(
-                                color: AppColors.textDisabled,
+                                color: context.appColors.textDisabled,
                                 fontSize: 13,
                             ),
                         ),
@@ -106,7 +106,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
             background: Container(
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.only(right: 16),
-                color: AppColors.error,
+                color: context.appColors.error,
                 child: const Icon(Icons.delete, color: Colors.white),
             ),
             onDismissed: (_) =>
@@ -124,27 +124,27 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                                 cacheManager: JmImageCacheManager.instance,
                                 fit: BoxFit.cover,
                                 placeholder: (_, __) => Container(
-                                    color: AppColors.surfaceVariant,
-                                    child: const Icon(
+                                    color: context.appColors.surfaceVariant,
+                                    child: Icon(
                                         Icons.image_outlined,
-                                        color: AppColors.textDisabled,
+                                        color: context.appColors.textDisabled,
                                         size: 20,
                                     ),
                                 ),
                                 errorWidget: (_, __, ___) => Container(
-                                    color: AppColors.surfaceVariant,
-                                    child: const Icon(
+                                    color: context.appColors.surfaceVariant,
+                                    child: Icon(
                                         Icons.broken_image,
-                                        color: AppColors.textDisabled,
+                                        color: context.appColors.textDisabled,
                                         size: 20,
                                     ),
                                 ),
                             )
                             : Container(
-                                color: AppColors.surfaceVariant,
-                                child: const Icon(
+                                color: context.appColors.surfaceVariant,
+                                child: Icon(
                                     Icons.image_outlined,
-                                    color: AppColors.textDisabled,
+                                    color: context.appColors.textDisabled,
                                     size: 20,
                                 ),
                             ),
@@ -154,25 +154,25 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                     item.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 14,
-                        color: AppColors.textPrimary,
+                        color: context.appColors.textPrimary,
                     ),
                 ),
                 subtitle: Text(
                     item.author.isNotEmpty ? item.author : _formatTime(item.browsedAt),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.textSecondary,
+                        color: context.appColors.textSecondary,
                     ),
                 ),
                 trailing: Text(
                     _formatTime(item.browsedAt),
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 11,
-                        color: AppColors.textDisabled,
+                        color: context.appColors.textDisabled,
                     ),
                 ),
                 onTap: () => context.push('/album/${item.albumId}'),
@@ -220,7 +220,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                             Navigator.pop(context);
                             ref.read(browseHistoryProvider.notifier).clearAllHistory();
                         },
-                        child: const Text('清空', style: TextStyle(color: AppColors.error)),
+                        child: Text('清空', style: TextStyle(color: context.appColors.error)),
                     ),
                 ],
             ),

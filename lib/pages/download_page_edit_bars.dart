@@ -21,27 +21,27 @@ class LibraryEditBar extends StatelessWidget
             top: false,
             child: Container(
                 decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: context.appColors.surface,
                     border: Border(
                         top: BorderSide(
-                            color: AppColors.divider.withValues(alpha: 0.6),
+                            color: context.appColors.divider.withValues(alpha: 0.6),
                         ),
                     ),
                 ),
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(
                     children: [
-                        const Icon(
+                        Icon(
                             Icons.delete_outline,
                             size: 18,
-                            color: AppColors.textSecondary,
+                            color: context.appColors.textSecondary,
                         ),
                         const SizedBox(width: 6),
-                        const Expanded(
+                        Expanded(
                             child: Text(
                                 '删除将同时清理本地文件',
                                 style: TextStyle(
-                                    color: AppColors.textSecondary,
+                                    color: context.appColors.textSecondary,
                                     fontSize: 13,
                                 ),
                             ),
@@ -51,9 +51,9 @@ class LibraryEditBar extends StatelessWidget
                             icon: const Icon(Icons.delete, size: 18),
                             label: Text('删除 ($count)'),
                             style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.error,
+                                backgroundColor: context.appColors.error,
                                 disabledBackgroundColor:
-                                    AppColors.error.withValues(alpha: 0.3),
+                                    context.appColors.error.withValues(alpha: 0.3),
                                 foregroundColor: Colors.white,
                             ),
                         ),
@@ -85,10 +85,10 @@ class TaskEditBar extends StatelessWidget
             top: false,
             child: Container(
                 decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: context.appColors.surface,
                     border: Border(
                         top: BorderSide(
-                            color: AppColors.divider.withValues(alpha: 0.6),
+                            color: context.appColors.divider.withValues(alpha: 0.6),
                         ),
                     ),
                 ),
@@ -101,9 +101,9 @@ class TaskEditBar extends StatelessWidget
                                 icon: const Icon(Icons.refresh, size: 18),
                                 label: Text('重试 ($count)'),
                                 style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.accent,
+                                    foregroundColor: context.appColors.accent,
                                     side: BorderSide(
-                                        color: AppColors.accent
+                                        color: context.appColors.accent
                                             .withValues(alpha: 0.5),
                                     ),
                                 ),
@@ -116,9 +116,9 @@ class TaskEditBar extends StatelessWidget
                                 icon: const Icon(Icons.delete, size: 18),
                                 label: Text('删除 ($count)'),
                                 style: FilledButton.styleFrom(
-                                    backgroundColor: AppColors.error,
+                                    backgroundColor: context.appColors.error,
                                     disabledBackgroundColor:
-                                        AppColors.error.withValues(alpha: 0.3),
+                                        context.appColors.error.withValues(alpha: 0.3),
                                     foregroundColor: Colors.white,
                                 ),
                             ),

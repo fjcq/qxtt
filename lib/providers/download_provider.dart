@@ -22,6 +22,8 @@ export 'download_task_view.dart';
 /// - 任务完成后 2 秒自动从列表与数据库中移除（不再出现在"下载中"Tab）
 /// - 完成后 Library 接管已下载章节的所有权
 /// - 删除 / 重试 / 取消操作默认清理本地文件
+/// - 暂停 / 继续：保留已下载部分文件，按图片级断点续传
+/// - 启动时自动恢复所有 `pending` 与 `paused` 任务
 class DownloadNotifier extends DownloadNotifierBase
     with DownloadTaskSchedulerMixin
 {
@@ -31,14 +33,69 @@ class DownloadNotifier extends DownloadNotifierBase
         _init();
     }
 
-    /// 初始化：加载任务、监听进度、补全历史完成的任务到 library
+    /// 初始化：加载任务、监听进度、补全历史完成的任务到 library、
+    /// 恢复未完成的任务
     void _init()
     {
-        loadTasks().then((_) => _syncCompletedTasksToLibrary());
+        loadTasks().then((_) async
+        {
+            await _syncCompletedTasksToLibrary();
+            await _recoverOnStartup();
+        });
         progressSub = downloadService.onProgress.listen((progress)
         {
             _updateTaskProgress(progress);
         });
+    }
+
+    /// 应用启动时恢复未完成的任务
+    /// - `pending` 任务：直接重新派发
+    /// - `paused` 任务：重新派发（下载流程会自动跳过已有图片）
+    /// - `running` 任务：通常由上次崩溃造成；标记为 `paused` 让用户主动继续
+    Future<void> _recoverOnStartup() async
+    {
+        final toResume = <DownloadTaskModel>[];
+        final toMarkPaused = <String>[];
+
+        for (final t in state.tasks)
+        {
+            if (t.status == 'pending' || t.status == 'paused')
+            {
+                toResume.add(t);
+            }
+            else if (t.status == 'running')
+            {
+                // 上次崩溃遗留的"运行中"任务，标记为 paused 等用户主动继续
+                toMarkPaused.add(t.taskId);
+            }
+        }
+
+        for (final id in toMarkPaused)
+        {
+            await taskDao.updateTaskStatus(id, 'paused', '上次未正常结束', 0.0);
+        }
+
+        if (toMarkPaused.isNotEmpty)
+        {
+            await loadTasks();
+        }
+
+        for (final t in toResume)
+        {
+            // 续传：直接派发，下载流程会跳过本地已存在的图片
+            if (t.taskType == 'album')
+            {
+                downloadService
+                    .downloadAlbum(t.taskId, t.jmId)
+                    .then((_) => loadTasks());
+            }
+            else
+            {
+                downloadService
+                    .downloadPhoto(t)
+                    .then((_) => loadTasks());
+            }
+        }
     }
 
     /// 根据进度事件更新内存中的任务状态
@@ -66,6 +123,13 @@ class DownloadNotifier extends DownloadNotifierBase
         if (progress.downloadedPhotoIds.isNotEmpty)
         {
             targetTask.downloadedPhotoIds = progress.downloadedPhotoIds;
+            // 增量同步到 library：让"边下边看"的入口即时可用
+            _handlePartialDownloaded(targetTask);
+        }
+        // 同步边下边看集合：用于在章节未完全下载完时也能立即显示「阅读」入口
+        if (progress.partialDownloadedPhotoIds.isNotEmpty)
+        {
+            targetTask.partialDownloadedPhotoIds = progress.partialDownloadedPhotoIds;
         }
         if (progress.status == 'completed')
         {
@@ -134,6 +198,26 @@ class DownloadNotifier extends DownloadNotifierBase
             author: task.coverAuthor.isNotEmpty ? task.coverAuthor : null,
             coverPath: task.coverPath,
             localPath: albumLocalPath,
+            pageCount: task.coverPageCount > 0 ? task.coverPageCount : null,
+            episodeCount: task.coverEpisodeCount > 0 ? task.coverEpisodeCount : null,
+        );
+    }
+
+    /// 增量入书架：每次进度事件携带已完成的章节列表时，调用此方法
+    /// 立即把已完成的章节写入 library，让用户可以边下边看
+    void _handlePartialDownloaded(DownloadTaskModel task)
+    {
+        if (task.albumId.isEmpty) return;
+        if (task.downloadedPhotoIds.isEmpty) return;
+        if (task.status != 'running') return;
+
+        ref.read(libraryProvider.notifier).markEpisodesDownloaded(
+            task.albumId,
+            task.downloadedPhotoIds,
+            title: task.title,
+            author: task.coverAuthor.isNotEmpty ? task.coverAuthor : null,
+            coverPath: task.coverPath,
+            localPath: task.localPath,
             pageCount: task.coverPageCount > 0 ? task.coverPageCount : null,
             episodeCount: task.coverEpisodeCount > 0 ? task.coverEpisodeCount : null,
         );
@@ -221,11 +305,20 @@ final downloadServiceProvider = Provider<DownloadService>((ref)
     final taskDao = ref.watch(taskDaoProvider);
     final config = ref.watch(configProvider).config;
     final downloadDir = config.downloadDir;
-    return DownloadService(
+    final service = DownloadService(
         client: client,
         taskDao: taskDao,
         downloadDir: downloadDir,
+        imageThreadCount: config.imageThreadCount,
+        photoThreadCount: config.photoThreadCount,
     );
+    // 监听 config 变更，实时更新并发数（已运行的下载批次信号量不变，
+    // 仅影响之后新派发的图片）
+    ref.listen<ConfigState>(configProvider, (prev, next)
+    {
+        service.imageThreadCount = next.config.imageThreadCount;
+    });
+    return service;
 });
 
 /// 下载管理 Provider 实例

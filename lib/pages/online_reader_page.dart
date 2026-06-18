@@ -372,8 +372,8 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
   /// 构建图片内容
   Widget _buildContent() {
     if (_initialLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.accent),
+      return Center(
+        child: CircularProgressIndicator(color: context.appColors.accent),
       );
     }
     if (error != null) {
@@ -383,16 +383,16 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.error_outline,
-                color: AppColors.error,
+                color: context.appColors.error,
                 size: 48,
               ),
               const SizedBox(height: 12),
               Text(
                 error!,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                style: TextStyle(
+                  color: context.appColors.textSecondary,
                   fontSize: 13,
                 ),
                 textAlign: TextAlign.center,
@@ -414,10 +414,10 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
       );
     }
     if (_photoDetail == null || _photoDetail!.pageArr.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           '暂无图片',
-          style: TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: context.appColors.textSecondary),
         ),
       );
     }

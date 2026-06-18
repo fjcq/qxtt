@@ -84,7 +84,7 @@ class _CategoryPageState extends ConsumerState<CategoryPage>
                     const SizedBox(height: 8),
                     // 时间选择
                     _buildTimeChips(),
-                    const Divider(color: AppColors.divider),
+                    Divider(color: context.appColors.divider),
                     // 结果列表
                     Expanded(child: _buildResults(state)),
                 ],
@@ -173,10 +173,10 @@ class _CategoryPageState extends ConsumerState<CategoryPage>
 
         if (state.results.isEmpty)
         {
-            return const Center(
+            return Center(
                 child: Text(
                     '暂无数据',
-                    style: TextStyle(color: AppColors.textSecondary),
+                    style: TextStyle(color: context.appColors.textSecondary),
                 ),
             );
         }

@@ -33,6 +33,7 @@ class DownloadState
     {
         final map = <DownloadTaskGroup, List<DownloadTaskView>>{
             DownloadTaskGroup.active: [],
+            DownloadTaskGroup.paused: [],
             DownloadTaskGroup.failed: [],
         };
         for (final t in tasks)
@@ -52,6 +53,17 @@ class DownloadState
         for (final t in tasks)
         {
             if (t.status == 'running' || t.status == 'pending') n++;
+        }
+        return n;
+    }
+
+    /// 总计已暂停任务数
+    int get pausedCount
+    {
+        var n = 0;
+        for (final t in tasks)
+        {
+            if (t.status == 'paused') n++;
         }
         return n;
     }

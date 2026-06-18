@@ -34,11 +34,11 @@ class CategoryChip extends StatelessWidget
                 ),
                 decoration: BoxDecoration(
                     color: isSelected
-                        ? AppColors.accent
-                        : AppColors.surfaceVariant,
+                        ? context.appColors.accent
+                        : context.appColors.surfaceVariant,
                     borderRadius: BorderRadius.circular(20),
                     border: isSelected
-                        ? Border.all(color: AppColors.accentLight, width: 1)
+                        ? Border.all(color: context.appColors.accentLight, width: 1)
                         : null,
                 ),
                 child: Text(
@@ -47,8 +47,8 @@ class CategoryChip extends StatelessWidget
                         fontSize: 13,
                         fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                         color: isSelected
-                            ? AppColors.background
-                            : AppColors.textSecondary,
+                            ? context.appColors.background
+                            : context.appColors.textSecondary,
                     ),
                 ),
             ),

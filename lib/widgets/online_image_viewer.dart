@@ -233,21 +233,21 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
     Widget _buildLoading()
     {
         return Container(
-            color: AppColors.background,
+            color: context.appColors.background,
             constraints: const BoxConstraints(minHeight: 200),
             child: Center(
                 child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                        const CircularProgressIndicator(
-                            color: AppColors.accent,
+                        CircularProgressIndicator(
+                            color: context.appColors.accent,
                             strokeWidth: 2,
                         ),
                         const SizedBox(height: 12),
                         Text(
                             _stage.isEmpty ? '加载中...' : _stage,
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
+                            style: TextStyle(
+                                color: context.appColors.textSecondary,
                                 fontSize: 12,
                             ),
                         ),
@@ -258,8 +258,8 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
                                     width: 160,
                                     child: LinearProgressIndicator(
                                         value: _progress,
-                                        backgroundColor: AppColors.surfaceVariant,
-                                        color: AppColors.accent,
+                                        backgroundColor: context.appColors.surfaceVariant,
+                                        color: context.appColors.accent,
                                         minHeight: 2,
                                     ),
                                 ),
@@ -274,15 +274,15 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
     Widget _buildError()
     {
         return Container(
-            color: AppColors.background,
+            color: context.appColors.background,
             constraints: const BoxConstraints(minHeight: 200),
             child: Center(
                 child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                        const Icon(
+                        Icon(
                             Icons.broken_image,
-                            color: AppColors.textDisabled,
+                            color: context.appColors.textDisabled,
                             size: 48,
                         ),
                         const SizedBox(height: 8),
@@ -290,8 +290,8 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
                             padding: const EdgeInsets.symmetric(horizontal: 32),
                             child: Text(
                                 _error ?? '加载失败',
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary,
+                                style: TextStyle(
+                                    color: context.appColors.textSecondary,
                                     fontSize: 12,
                                 ),
                                 textAlign: TextAlign.center,
@@ -301,9 +301,9 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
                         ),
                         const SizedBox(height: 12),
                         TextButton.icon(
-                            icon: const Icon(
+                            icon: Icon(
                                 Icons.refresh,
-                                color: AppColors.accent,
+                                color: context.appColors.accent,
                                 size: 18,
                             ),
                             label: const Text('重试'),

@@ -144,9 +144,9 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                     Tab(text: '已下载'),
                     Tab(text: '下载中'),
                 ],
-                labelColor: AppColors.accent,
-                unselectedLabelColor: AppColors.textSecondary,
-                indicatorColor: AppColors.accent,
+                labelColor: context.appColors.accent,
+                unselectedLabelColor: context.appColors.textSecondary,
+                indicatorColor: context.appColors.accent,
             ),
         );
     }
@@ -193,17 +193,17 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                         handleLibraryMenu(v);
                     }
                 },
-                color: AppColors.surface,
+                color: context.appColors.surface,
                 itemBuilder: (context)
                 {
-                    return const [
+                    return [
                         PopupMenuItem(
                             value: 'open_dir',
                             child: Row(
                                 children: [
-                                    Icon(Icons.folder_open, size: 18, color: AppColors.textSecondary),
-                                    SizedBox(width: 8),
-                                    Text('打开下载目录'),
+                                    Icon(Icons.folder_open, size: 18, color: context.appColors.textSecondary),
+                                    const SizedBox(width: 8),
+                                    const Text('打开下载目录'),
                                 ],
                             ),
                         ),
@@ -211,9 +211,9 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                             value: 'refresh',
                             child: Row(
                                 children: [
-                                    Icon(Icons.refresh, size: 18, color: AppColors.textSecondary),
-                                    SizedBox(width: 8),
-                                    Text('刷新占用统计'),
+                                    Icon(Icons.refresh, size: 18, color: context.appColors.textSecondary),
+                                    const SizedBox(width: 8),
+                                    const Text('刷新占用统计'),
                                 ],
                             ),
                         ),
@@ -221,9 +221,9 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                             value: 'orphan',
                             child: Row(
                                 children: [
-                                    Icon(Icons.cleaning_services, size: 18, color: AppColors.textSecondary),
-                                    SizedBox(width: 8),
-                                    Text('清理孤儿文件夹'),
+                                    Icon(Icons.cleaning_services, size: 18, color: context.appColors.textSecondary),
+                                    const SizedBox(width: 8),
+                                    const Text('清理孤儿文件夹'),
                                 ],
                             ),
                         ),
@@ -231,9 +231,9 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                             value: 'clear',
                             child: Row(
                                 children: [
-                                    Icon(Icons.delete_forever, size: 18, color: AppColors.error),
-                                    SizedBox(width: 8),
-                                    Text('清空所有下载', style: TextStyle(color: AppColors.error)),
+                                    Icon(Icons.delete_forever, size: 18, color: context.appColors.error),
+                                    const SizedBox(width: 8),
+                                    Text('清空所有下载', style: TextStyle(color: context.appColors.error)),
                                 ],
                             ),
                         ),
@@ -285,53 +285,76 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
                         handleDownloadMenu(v);
                     }
                 },
-                color: AppColors.surface,
+                color: context.appColors.surface,
                 itemBuilder: (context)
                 {
                     final state = ref.read(downloadProvider);
                     final hasFailed = state.failedCount > 0;
                     final hasActive = state.activeCount > 0;
+                    final hasPaused = state.pausedCount > 0;
                     return [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                             value: 'open_dir',
                             child: Row(
                                 children: [
-                                    Icon(Icons.folder_open, size: 18, color: AppColors.textSecondary),
-                                    SizedBox(width: 8),
-                                    Text('打开下载目录'),
+                                    Icon(Icons.folder_open, size: 18, color: context.appColors.textSecondary),
+                                    const SizedBox(width: 8),
+                                    const Text('打开下载目录'),
                                 ],
                             ),
                         ),
+                        if (hasActive)
+                            PopupMenuItem(
+                                value: 'pause_all',
+                                child: Row(
+                                    children: [
+                                        Icon(Icons.pause_circle_outline, size: 18, color: context.appColors.warning),
+                                        const SizedBox(width: 8),
+                                        const Text('全部暂停'),
+                                    ],
+                                ),
+                            ),
+                        if (hasPaused)
+                            PopupMenuItem(
+                                value: 'resume_all',
+                                child: Row(
+                                    children: [
+                                        Icon(Icons.play_circle_outline, size: 18, color: context.appColors.accent),
+                                        const SizedBox(width: 8),
+                                        const Text('全部继续'),
+                                    ],
+                                ),
+                            ),
                         if (hasFailed)
-                            const PopupMenuItem(
+                            PopupMenuItem(
                                 value: 'retry_all',
                                 child: Row(
                                     children: [
-                                        Icon(Icons.refresh, size: 18, color: AppColors.warning),
-                                        SizedBox(width: 8),
-                                        Text('重试所有失败'),
+                                        Icon(Icons.refresh, size: 18, color: context.appColors.warning),
+                                        const SizedBox(width: 8),
+                                        const Text('重试所有失败'),
                                     ],
                                 ),
                             ),
                         if (hasActive)
-                            const PopupMenuItem(
+                            PopupMenuItem(
                                 value: 'cancel_all',
                                 child: Row(
                                     children: [
-                                        Icon(Icons.block, size: 18, color: AppColors.textSecondary),
-                                        SizedBox(width: 8),
-                                        Text('全部取消'),
+                                        Icon(Icons.block, size: 18, color: context.appColors.textSecondary),
+                                        const SizedBox(width: 8),
+                                        const Text('全部取消'),
                                     ],
                                 ),
                             ),
                         if (hasFailed)
-                            const PopupMenuItem(
+                            PopupMenuItem(
                                 value: 'clear_failed',
                                 child: Row(
                                     children: [
-                                        Icon(Icons.delete_sweep, size: 18, color: AppColors.error),
-                                        SizedBox(width: 8),
-                                        Text('清除失败 / 已取消', style: TextStyle(color: AppColors.error)),
+                                        Icon(Icons.delete_sweep, size: 18, color: context.appColors.error),
+                                        const SizedBox(width: 8),
+                                        Text('清除失败 / 已取消', style: TextStyle(color: context.appColors.error)),
                                     ],
                                 ),
                             ),
@@ -431,7 +454,7 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
               content: Text(text),
-              backgroundColor: AppColors.surfaceVariant,
+              backgroundColor: context.appColors.surfaceVariant,
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 2),
           ));
@@ -448,12 +471,12 @@ class _DownloadPageState extends ConsumerState<DownloadPage>
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
               content: Text(msg),
-              backgroundColor: AppColors.surfaceVariant,
+              backgroundColor: context.appColors.surfaceVariant,
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 3),
               action: SnackBarAction(
                   label: '查看',
-                  textColor: AppColors.accent,
+                  textColor: context.appColors.accent,
                   onPressed: ()
                   {
                       if (!mounted) return;

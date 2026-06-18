@@ -371,9 +371,9 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
                 ],
                 bottom: TabBar(
                     controller: _tab,
-                    indicatorColor: AppColors.accent,
-                    labelColor: AppColors.accent,
-                    unselectedLabelColor: AppColors.textSecondary,
+                    indicatorColor: context.appColors.accent,
+                    labelColor: context.appColors.accent,
+                    unselectedLabelColor: context.appColors.textSecondary,
                     onTap: (_) => setState(() {}),
                     tabs: const [
                         Tab(text: 'API 域名'),
@@ -402,7 +402,7 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
                         total: _testTotal,
                         onCancel: _cancelTest,
                     ),
-                    const Divider(height: 1, color: AppColors.divider),
+                    Divider(height: 1, color: context.appColors.divider),
                     // ===== 列表 =====
                     Expanded(
                         child: TabBarView(
@@ -445,11 +445,11 @@ class _DomainManagementPageState extends ConsumerState<DomainManagementPage>
                 child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                        const Icon(Icons.dns_outlined,
-                            size: 64, color: AppColors.textDisabled),
+                        Icon(Icons.dns_outlined,
+                            size: 64, color: context.appColors.textDisabled),
                         const SizedBox(height: 8),
-                        const Text('列表为空',
-                            style: TextStyle(color: AppColors.textSecondary)),
+                        Text('列表为空',
+                            style: TextStyle(color: context.appColors.textSecondary)),
                         const SizedBox(height: 12),
                         ElevatedButton.icon(
                             onPressed: _addCustomDomain,

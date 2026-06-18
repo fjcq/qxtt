@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../providers/download_provider.dart';
 import '../theme/app_colors.dart';
@@ -38,8 +39,8 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
             return _buildEmptyDownload();
         }
         return RefreshIndicator(
-            color: AppColors.accent,
-            backgroundColor: AppColors.surface,
+            color: context.appColors.accent,
+            backgroundColor: context.appColors.surface,
             onRefresh: () async
             {
                 await ref.read(downloadProvider.notifier).refresh();
@@ -53,6 +54,7 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
     {
         final grouped = state.grouped;
         final active = grouped[DownloadTaskGroup.active]!;
+        final paused = grouped[DownloadTaskGroup.paused]!;
         final failed = grouped[DownloadTaskGroup.failed]!;
 
         return ListView(
@@ -63,26 +65,60 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                         icon: Icons.cloud_download,
                         title: '正在下载',
                         count: active.length,
-                        color: AppColors.accent,
+                        color: context.appColors.accent,
                     ),
                     const SizedBox(height: 8),
                     ...active.map((v) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: DownloadTaskTile(
                                 view: v,
+                                onRead: v.hasReadableContent
+                                    ? () => _openTaskReader(v)
+                                    : null,
+                                onPause: () =>
+                                    ref.read(downloadProvider.notifier)
+                                        .pauseTask(v.task.taskId),
                                 onCancel: () =>
                                     ref.read(downloadProvider.notifier)
                                         .cancelTask(v.task.taskId),
                             ),
                         )),
                 ],
-                if (failed.isNotEmpty) ...[
+                if (paused.isNotEmpty) ...[
                     if (active.isNotEmpty) const SizedBox(height: 4),
+                    _buildSectionHeader(
+                        icon: Icons.pause_circle_filled,
+                        title: '已暂停',
+                        count: paused.length,
+                        color: context.appColors.warning,
+                    ),
+                    const SizedBox(height: 8),
+                    ...paused.map((v) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: DownloadTaskTile(
+                                view: v,
+                                onRead: v.hasReadableContent
+                                    ? () => _openTaskReader(v)
+                                    : null,
+                                onResume: () =>
+                                    ref.read(downloadProvider.notifier)
+                                        .resumeTask(v.task.taskId),
+                                onCancel: () =>
+                                    ref.read(downloadProvider.notifier)
+                                        .cancelTask(v.task.taskId),
+                                onDelete: () =>
+                                    _confirmDeleteTask(v.task.taskId),
+                            ),
+                        )),
+                ],
+                if (failed.isNotEmpty) ...[
+                    if (active.isNotEmpty || paused.isNotEmpty)
+                        const SizedBox(height: 4),
                     _buildSectionHeader(
                         icon: Icons.error_outline,
                         title: '失败 / 已取消',
                         count: failed.length,
-                        color: AppColors.error,
+                        color: context.appColors.error,
                     ),
                     const SizedBox(height: 8),
                     ...failed.map((v) => Padding(
@@ -94,6 +130,9 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                                     selectedTaskIds.contains(v.task.taskId),
                                 onTap: () => isTaskEditMode
                                     ? _toggleSelectTask(v.task.taskId)
+                                    : null,
+                                onRead: v.hasReadableContent
+                                    ? () => _openTaskReader(v)
                                     : null,
                                 onRetry: () =>
                                     ref.read(downloadProvider.notifier)
@@ -121,10 +160,10 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                 const SizedBox(width: 6),
                 Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: context.appColors.textPrimary,
                     ),
                 ),
                 const SizedBox(width: 6),
@@ -159,21 +198,21 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                         Icon(
                             Icons.cloud_off,
                             size: 64,
-                            color: AppColors.textDisabled.withValues(alpha: 0.6),
+                            color: context.appColors.textDisabled.withValues(alpha: 0.6),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                             '暂无下载任务',
                             style: TextStyle(
-                                color: AppColors.textSecondary,
+                                color: context.appColors.textSecondary,
                                 fontSize: 14,
                             ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                             '到本子详情页发起下载',
                             style: TextStyle(
-                                color: AppColors.textDisabled,
+                                color: context.appColors.textDisabled,
                                 fontSize: 12,
                             ),
                         ),
@@ -197,6 +236,27 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                 selectedTaskIds.add(taskId);
             }
         });
+    }
+
+    /// 打开下载中任务的阅读器
+    ///
+    /// 根据 [view] 的任务类型决定路由：
+    /// - 整本任务：跳转到第一个已下载章节（部分下载也可阅读，缺失页走网络）
+    /// - 单章任务：跳转到任务对应的 chapter
+    /// 通过 reader 的混合渲染（本地优先 + 缺失走网络）实现「边下边看」
+    void _openTaskReader(DownloadTaskView view)
+    {
+        final photoId = view.readablePhotoId;
+        if (photoId == null || photoId.isEmpty)
+        {
+            showSnack('该任务暂无可读内容');
+            return;
+        }
+        final isAlbum = view.isAlbumTask;
+        showSnack(isAlbum
+            ? '进入阅读（已下载部分即时显示，未下载页将在线加载）'
+            : '进入阅读（已下载部分即时显示，未下载页将在线加载）');
+        context.push('/reader/$photoId');
     }
 
     /// 全选/取消全选任务
@@ -308,6 +368,22 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
             case 'retry_all':
                 final n = await ref.read(downloadProvider.notifier).retryAllFailed();
                 if (mounted) showSnack('已重试 $n 个任务');
+                break;
+            case 'resume_all':
+                final n = await ref.read(downloadProvider.notifier).resumeAllPaused();
+                if (mounted) showSnack('已继续 $n 个任务');
+                break;
+            case 'pause_all':
+                final ok = await confirm(
+                    title: '全部暂停',
+                    message: '将暂停所有正在下载的任务，已下载的部分文件保留。',
+                    confirmText: '全部暂停',
+                );
+                if (ok)
+                {
+                    await ref.read(downloadProvider.notifier).pauseAllActive();
+                    if (mounted) showSnack('已暂停所有活动任务');
+                }
                 break;
             case 'cancel_all':
                 final ok = await confirm(
