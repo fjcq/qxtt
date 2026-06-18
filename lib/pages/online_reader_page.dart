@@ -794,10 +794,11 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                         child: Stack(
                             children: [
                                 _buildContent(),
-                                if (_chapterLoading) _buildChapterLoadingOverlay(),
+                                if (_chapterLoading)
+                                    Positioned.fill(child: _buildChapterLoadingOverlay()),
                                 if (_showControls && !_initialLoading &&
                                     !_chapterLoading && _error == null)
-                                    _buildControls(),
+                                    Positioned.fill(child: _buildControls()),
                             ],
                         ),
                     ),
@@ -1012,6 +1013,9 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     /// 构建底部控制栏
     Widget _buildBottomBar(int total)
     {
+        // 章节导航是否可用
+        final canNavigate = _albumDetail != null && _albumDetail!.episodes.length > 1;
+
         return Container(
             padding: EdgeInsets.only(
                 left: 16,
@@ -1033,6 +1037,18 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                     if (total > 0)
                         _buildProgressBar(total),
                     const SizedBox(height: 8),
+                    // 章节导航提示（无法切换时）
+                    if (!canNavigate)
+                        Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                                _albumDetail == null ? '章节信息获取失败' : '仅单章',
+                                style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 11,
+                                ),
+                            ),
+                        ),
                     // 按钮行
                     Row(
                         mainAxisAlignment: MainAxisAlignment.center,

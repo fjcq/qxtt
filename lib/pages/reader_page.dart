@@ -8,8 +8,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/jm/jm_entity.dart';
+import '../data/models/library_album_model.dart';
+import '../providers/config_provider.dart';
 import '../providers/search_provider.dart';
 import '../theme/app_colors.dart';
+import '../utils/library_storage.dart';
 import '../utils/path_helper.dart';
 import '../widgets/chapter_catalog_drawer.dart';
 
@@ -71,6 +74,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   /// 水平滑动检测：是否已确认为水平滑动
   bool _isHorizontalDrag = false;
 
+  /// 是否显示控制栏
+  bool _showControls = true;
+
   /// 是否正在加载
   bool _isLoading = true;
 
@@ -88,6 +94,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   /// 下载根目录
   String? _downloadRoot;
+
+  /// 本地重构的章节目录映射：photoId -> 图片目录绝对路径
+  Map<String, String>? _localEpisodeDirs;
 
   /// 是否为桌面平台
   bool get _isDesktop =>
@@ -166,14 +175,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   /// 初始加载
   Future<void> _loadInitial() async {
-    // 获取下载目录
+    // 重置本地重构映射，避免重试时残留旧数据
+    _localEpisodeDirs = null;
+
+    // 获取下载目录（优先使用用户配置的下载目录）
     try {
-      _downloadRoot = await PathHelper.getDownloadDir();
+      await ref.read(configProvider.notifier).initialized;
+      final configured = ref.read(configProvider).config.downloadDir;
+      _downloadRoot =
+          await LibraryStorage.getDownloadDir(configured: configured);
     } catch (_) {
       _downloadRoot = null;
     }
 
-    // 尝试获取本子详情（用于章节导航）
+    // 尝试从网络获取本子详情（用于章节导航）
     try {
       final client = ref.read(jmClientProvider);
       // 先获取章节详情以得到 albumId
@@ -186,6 +201,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     } catch (_) {
       _albumDetail = null;
     }
+
+    // 无论网络是否成功，都尝试从本地书架加载章节目录映射
+    // 用于：离线时重建本子详情；在线时作为本地路径兜底
+    await _tryRebuildAlbumFromLibrary();
 
     // 加载当前章节图片
     await _loadChapterImages(_activePhotoId);
@@ -227,6 +246,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     final List<String> paths = [];
     final sep = Platform.pathSeparator;
+
+    // 0) 使用本地重构的章节目录映射（离线/全本下载场景）
+    final localDirs = _localEpisodeDirs;
+    if (localDirs != null && localDirs.containsKey(photoId)) {
+      paths.addAll(_scanDirectoryForImages(localDirs[photoId]!));
+      if (paths.isNotEmpty) return paths;
+    }
 
     // 1) 按本子目录结构查找
     if (_albumDetail != null) {
@@ -274,6 +300,96 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     files.sort((a, b) => a.path.compareTo(b.path));
     return files.map((f) => f.path).toList();
+  }
+
+  /// 从本地书架与目录结构加载/重建本子信息
+  /// - 网络失败时：重建 [_albumDetail] 与 [_localEpisodeDirs]，保证离线可切章
+  /// - 网络成功时：仅构建 [_localEpisodeDirs]，作为本地路径不匹配时的兜底
+  Future<void> _tryRebuildAlbumFromLibrary() async {
+    if (_downloadRoot == null) return;
+
+    // 从书架 DAO 查找包含当前 photoId 的本子
+    final albums = await ref.read(libraryDaoProvider).getAllAlbums();
+    LibraryAlbumModel? matchedAlbum;
+    for (final album in albums) {
+      if (album.downloadedEpisodes.contains(_activePhotoId)) {
+        matchedAlbum = album;
+        break;
+      }
+    }
+    if (matchedAlbum == null) return;
+
+    // 解析本子本地下载根目录
+    final albumDir = await LibraryStorage.resolveAlbumDir(
+      matchedAlbum,
+      downloadDir: _downloadRoot!,
+    );
+    final dir = Directory(albumDir);
+    if (!await dir.exists()) return;
+
+    // 扫描本子目录下包含图片的子目录，按路径名排序
+    final subDirs = <Directory>[];
+    try {
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! Directory) continue;
+        final hasImages = await _directoryHasImages(entity.path);
+        if (hasImages) subDirs.add(entity);
+      }
+    } catch (_) {
+      return;
+    }
+    subDirs.sort((a, b) => a.path.compareTo(b.path));
+
+    // 将已下载章节 ID 与本地子目录按顺序配对
+    final episodes = <Episode>[];
+    final localDirs = <String, String>{};
+    final photoIds = matchedAlbum.downloadedEpisodes;
+    for (var i = 0; i < photoIds.length && i < subDirs.length; i++) {
+      final photoId = photoIds[i];
+      final subDir = subDirs[i];
+      final index = subDir.path.split(Platform.pathSeparator).last;
+      episodes.add(Episode(
+        photoId: photoId,
+        index: index,
+        name: '第 $index 话',
+      ));
+      localDirs[photoId] = subDir.path;
+    }
+
+    if (episodes.isEmpty) return;
+
+    // 网络失败时重建本子详情，保证章节导航可用
+    _albumDetail ??= AlbumDetail(
+      albumId: matchedAlbum.albumId,
+      name: matchedAlbum.title,
+      author: matchedAlbum.author,
+      pageCount: matchedAlbum.pageCount,
+      episodeCount: matchedAlbum.episodeCount,
+      episodes: episodes,
+    );
+    _localEpisodeDirs = localDirs;
+  }
+
+  /// 判断目录中是否包含至少一张图片文件
+  Future<bool> _directoryHasImages(String dirPath) async {
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) return false;
+    try {
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is File) {
+          final name = entity.path.toLowerCase();
+          if (name.endsWith('.jpg') ||
+              name.endsWith('.jpeg') ||
+              name.endsWith('.png') ||
+              name.endsWith('.webp')) {
+            return true;
+          }
+        }
+      }
+    } catch (_) {
+      return false;
+    }
+    return false;
   }
 
   /// 在 albumDetail.episodes 中查找 photoId 对应的章节
@@ -426,7 +542,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         if (_lastTapTime != null &&
             DateTime.now().difference(_lastTapTime!).inMilliseconds >= 280) {
           setState(() {
-            // 切换控制栏
+            _showControls = !_showControls;
           });
           _lastTapTime = null;
         }
@@ -575,9 +691,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             child: Stack(
               children: [
                 _buildContent(),
-                if (_chapterLoading) _buildChapterLoadingOverlay(),
-                if (!_isLoading && !_chapterLoading && _error == null)
-                  _buildControls(),
+                if (_chapterLoading)
+                  Positioned.fill(child: _buildChapterLoadingOverlay()),
+                if (_showControls &&
+                    !_isLoading &&
+                    !_chapterLoading &&
+                    _error == null)
+                  Positioned.fill(child: _buildControls()),
               ],
             ),
           ),
@@ -782,6 +902,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   /// 构建底部控制栏
   Widget _buildBottomBar(int total) {
+    // 章节导航是否可用
+    final canNavigate =
+        _albumDetail != null && _albumDetail!.episodes.length > 1;
+
     return Container(
       padding: EdgeInsets.only(
         left: 16,
@@ -802,6 +926,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           // 进度条
           if (total > 0) _buildProgressBar(total),
           const SizedBox(height: 8),
+          // 章节导航提示（无法切换时）
+          if (!canNavigate)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                _albumDetail == null ? '章节信息获取失败' : '仅单章',
+                style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 11,
+                ),
+              ),
+            ),
           // 按钮行
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

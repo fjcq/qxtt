@@ -1,0 +1,156 @@
+# GitHub Actions 工作流：iOS 编译
+# 在 macOS runner 上编译 iOS IPA，无需本地 Mac 设备
+#
+# 使用方式：
+#   1. 将代码推送到 GitHub 仓库
+#   2. 在 Actions 页面手动触发（workflow_dispatch）
+#   3. 或推送到 main/develop 分支自动触发
+#
+# 前置条件：
+#   - GitHub 仓库（公开仓库免费，私有仓库有免费额度）
+#   - 如需签名 IPA，需配置 Apple Developer 证书（见下方 secrets 说明）
+#
+# Secrets 配置（可选，用于签名 IPA）：
+#   - BUILD_CERTIFICATE_BASE64：Apple Developer 证书（.p12）的 Base64 编码
+#   - BUILD_CERTIFICATE_PASSWORD：证书密码
+#   - KEYCHAIN_PASSWORD：临时钥匙串密码
+#   - PROVISION_PROFILE_BASE64：描述文件的 Base64 编码
+
+name: Build iOS
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      no_codesign:
+        description: '无签名模式（生成 .app 而非 .ipa）'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      flutter_version:
+        description: 'Flutter 版本'
+        required: false
+        default: '3.44.2'
+
+  # 推送到指定分支时自动触发
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'mobile/**'
+
+env:
+  FLUTTER_VERSION: ${{ github.event.inputs.flutter_version || '3.44.2' }}
+  PROJECT_DIR: mobile
+
+jobs:
+  build-ios:
+    name: Build iOS Release
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      # 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 安装 Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # 验证 Flutter 环境
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      # 安装 CocoaPods
+      - name: Install CocoaPods
+        working-directory: ${{ env.PROJECT_DIR }}/ios
+        run: |
+          gem install cocoapods
+          pod install || true
+
+      # 拉取依赖
+      - name: Get dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter pub get
+
+      # 签名模式：安装证书和描述文件
+      - name: Install Apple certificate and provisioning profile
+        if: github.event.inputs.no_codesign == 'false'
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.BUILD_CERTIFICATE_PASSWORD }}
+
+      # 编译 iOS（无签名模式）
+      - name: Build iOS (no codesign)
+        if: github.event.inputs.no_codesign != 'false'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter build ios --release --no-codesign
+
+      # 编译 iOS（签名模式）
+      - name: Build iOS IPA (signed)
+        if: github.event.inputs.no_codesign == 'false'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter build ipa --release
+
+      # 收集产物信息
+      - name: Collect build artifacts info
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          Write-Host "===== iOS 编译产物 ====="
+          if (Test-Path "build/ios/ipa") {
+            $ipa = Get-ChildItem -Path "build/ios/ipa" -Filter "*.ipa" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($ipa) {
+              $sizeMB = [math]::Round($ipa.Length / 1MB, 1)
+              Write-Host "IPA: $($ipa.Name) ($sizeMB MB)"
+            }
+          }
+          if (Test-Path "build/ios/iphoneos/Runner.app") {
+            $appFiles = Get-ChildItem -Path "build/ios/iphoneos/Runner.app" -Recurse -File
+            $totalSize = ($appFiles | Measure-Object Length -Sum).Sum
+            $totalMB = [math]::Round($totalSize / 1MB, 1)
+            Write-Host "APP: Runner.app ($totalMB MB, $($appFiles.Count) files)"
+          }
+        shell: pwsh
+
+      # 上传产物
+      - name: Upload IPA artifact
+        if: github.event.inputs.no_codesign == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-ipa
+          path: ${{ env.PROJECT_DIR }}/build/ios/ipa/*.ipa
+          retention-days: 30
+
+      - name: Upload APP artifact
+        if: github.event.inputs.no_codesign != 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-app
+          path: ${{ env.PROJECT_DIR }}/build/ios/iphoneos/Runner.app
+          retention-days: 30
+
+      # 编译报告
+      - name: Build summary
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          $noCodesign = "${{ github.event.inputs.no_codesign }}" -ne "false"
+          Write-Host "===== 编译报告 ====="
+          Write-Host "目标: iOS Release"
+          Write-Host "签名: $(if ($noCodesign) { '无签名（.app）' } else { '已签名（.ipa）' })"
+          Write-Host "Flutter: ${{ env.FLUTTER_VERSION }}"
+          Write-Host "Runner: macos-latest"
+          Write-Host "触发: ${{ github.event_name }}"
+          Write-Host "提交: ${{ github.sha }}"
+        shell: pwsh
