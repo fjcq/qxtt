@@ -13,6 +13,7 @@ import '../providers/browse_history_provider.dart';
 import '../providers/search_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/path_helper.dart';
+import '../widgets/chapter_catalog_drawer.dart';
 import '../widgets/online_image_viewer.dart';
 
 /// 在线阅读器页
@@ -25,8 +26,9 @@ import '../widgets/online_image_viewer.dart';
 ///
 /// 交互优化:
 /// - PC端鼠标拖动+惯性滑动
-/// - 键盘方向键控制
+/// - 键盘方向键控制（上下翻页，左右切换章节）
 /// - 移动端双指缩放
+/// - 左右滑动手势切换章节
 /// - 进度条、章节导航、目录
 class OnlineReaderPage extends ConsumerStatefulWidget
 {
@@ -45,6 +47,9 @@ class OnlineReaderPage extends ConsumerStatefulWidget
 class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     with TickerProviderStateMixin
 {
+    /// 当前活跃的 photoId（章节切换时更新）
+    String _activePhotoId = '';
+
     /// 章节详情
     PhotoDetail? _photoDetail;
 
@@ -65,6 +70,9 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
 
     /// 当前是否正在初始加载
     bool _initialLoading = true;
+
+    /// 是否正在切换章节
+    bool _chapterLoading = false;
 
     /// 本子下载根目录（探测一次）
     String? _downloadRoot;
@@ -87,8 +95,17 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     /// 全局缩放比例（移动端双指缩放，影响所有图片）
     double _globalScale = 1.0;
 
-    /// 上次缩放基准（用于计算增量）
-    double _previousScale = 1.0;
+    /// 双指缩放：活跃指针（pointerId → 位置）
+    final Map<int, Offset> _activePointers = {};
+
+    /// 双指缩放：上一次两指间距
+    double _lastPinchDistance = 0;
+
+    /// 双击检测：上次点击时间
+    DateTime? _lastTapTime;
+
+    /// 水平滑动检测：是否已确认为水平滑动
+    bool _isHorizontalDrag = false;
 
     /// 是否为桌面平台
     bool get _isDesktop =>
@@ -96,10 +113,53 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.linux;
 
+    /// 当前章节在列表中的索引
+    int get _currentEpisodeIndex
+    {
+        if (_albumDetail == null) return -1;
+        for (var i = 0; i < _albumDetail!.episodes.length; i++)
+        {
+            if (_albumDetail!.episodes[i].photoId == _activePhotoId)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /// 是否有上一章
+    bool get _hasPrevChapter
+    {
+        final idx = _currentEpisodeIndex;
+        return idx > 0;
+    }
+
+    /// 是否有下一章
+    bool get _hasNextChapter
+    {
+        final idx = _currentEpisodeIndex;
+        return idx >= 0 && idx < (_albumDetail?.episodes.length ?? 0) - 1;
+    }
+
+    /// 当前章节名称
+    String get _currentChapterName
+    {
+        if (_albumDetail == null) return '';
+        for (final ep in _albumDetail!.episodes)
+        {
+            if (ep.photoId == _activePhotoId)
+            {
+                return ep.name;
+            }
+        }
+        return '';
+    }
+
     @override
     void initState()
     {
         super.initState();
+        _activePhotoId = widget.photoId;
         _loadInitial();
         _scrollController.addListener(_onScroll);
     }
@@ -125,7 +185,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
 
         if (maxScroll <= 0 || total <= 0) return;
 
-        // 根据滚动位置估算当前页
         final estimatedPage = (scrollOffset / maxScroll * total).floor()
             .clamp(0, total - 1);
 
@@ -158,7 +217,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             final history = await ref.read(browseHistoryDaoProvider).getAllHistory();
             for (final h in history)
             {
-                if (h.lastReadPhotoId == widget.photoId)
+                if (h.lastReadPhotoId == _activePhotoId)
                 {
                     startPage = h.lastReadPage;
                     break;
@@ -172,8 +231,8 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
 
         try
         {
-            final detail = await client.getPhotoDetail(widget.photoId);
-            final scrambleId = await client.getScrambleId(widget.photoId);
+            final detail = await client.getPhotoDetail(_activePhotoId);
+            final scrambleId = await client.getScrambleId(_activePhotoId);
 
             // 尝试获取本子详情（用于章节导航和本地文件查找）
             AlbumDetail? albumDetail;
@@ -207,6 +266,9 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                     _scrollToPage(startPage);
                 });
             }
+
+            // 预加载相邻章节信息
+            _preloadAdjacentChapters();
         }
         catch (e)
         {
@@ -224,11 +286,12 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     {
         setState(()
         {
-            _initialLoading = true;
+            _chapterLoading = true;
             _error = null;
             _photoDetail = null;
             _scrambleId = 0;
             _currentPage = 0;
+            _activePhotoId = photoId;
         });
 
         final client = ref.read(jmClientProvider);
@@ -256,7 +319,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             {
                 _photoDetail = detail;
                 _scrambleId = scrambleId;
-                _initialLoading = false;
+                _chapterLoading = false;
             });
 
             // 滚动到顶部
@@ -265,6 +328,9 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                 _scrollController.jumpTo(0);
             }
             _persistProgressForChapter(photoId, 0);
+
+            // 预加载相邻章节信息
+            _preloadAdjacentChapters();
         }
         catch (e)
         {
@@ -272,8 +338,27 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             setState(()
             {
                 _error = e.toString();
-                _initialLoading = false;
+                _chapterLoading = false;
             });
+        }
+    }
+
+    /// 预加载相邻章节信息（仅获取 PhotoDetail，不渲染）
+    Future<void> _preloadAdjacentChapters() async
+    {
+        if (_albumDetail == null) return;
+        final idx = _currentEpisodeIndex;
+        final client = ref.read(jmClientProvider);
+
+        // 预加载下一章
+        if (idx >= 0 && idx < _albumDetail!.episodes.length - 1)
+        {
+            final nextPhotoId = _albumDetail!.episodes[idx + 1].photoId;
+            // 异步预取，不阻塞 UI
+            client.getPhotoDetail(nextPhotoId).catchError((_) => PhotoDetail(
+                photoId: '',
+                albumId: '',
+            ));
         }
     }
 
@@ -306,7 +391,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     Future<void> _persistProgress() async
     {
         if (_photoDetail == null) return;
-        await _persistProgressForChapter(widget.photoId, _currentPage);
+        await _persistProgressForChapter(_activePhotoId, _currentPage);
     }
 
     /// 持久化指定章节的阅读进度
@@ -335,7 +420,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         final sep = Platform.pathSeparator;
 
         // 1) 单章下载目录
-        final photoDirPath = '$_downloadRoot$sep${widget.photoId}$sep$seq.jpg';
+        final photoDirPath = '$_downloadRoot$sep$_activePhotoId$sep$seq.jpg';
         if (File(photoDirPath).existsSync() &&
             File('$photoDirPath.ok').existsSync())
         {
@@ -345,7 +430,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         // 2) 整本下载
         if (_albumDetail != null)
         {
-            final episode = _findEpisodeInAlbum(widget.photoId);
+            final episode = _findEpisodeInAlbum(_activePhotoId);
             if (episode != null)
             {
                 final albumPath = PathHelper.getPagePath(
@@ -371,7 +456,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             {
                 if (entity is File &&
                     entity.path.endsWith('$seq.jpg') &&
-                    entity.path.contains(widget.photoId))
+                    entity.path.contains(_activePhotoId))
                 {
                     return entity.path;
                 }
@@ -398,74 +483,169 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         return null;
     }
 
-    /// 获取当前章节在列表中的索引
-    int get _currentEpisodeIndex
-    {
-        if (_albumDetail == null) return -1;
-        for (var i = 0; i < _albumDetail!.episodes.length; i++)
-        {
-            if (_albumDetail!.episodes[i].photoId == widget.photoId)
-            {
-                return i;
-            }
-        }
-        return -1;
-    }
+    // ===== 指针事件（鼠标拖动 + 移动端双指缩放 + 水平滑动） =====
 
-    /// 是否有上一章
-    bool get _hasPrevChapter
-    {
-        final idx = _currentEpisodeIndex;
-        return idx > 0;
-    }
-
-    /// 是否有下一章
-    bool get _hasNextChapter
-    {
-        final idx = _currentEpisodeIndex;
-        return idx >= 0 && idx < (_albumDetail?.episodes.length ?? 0) - 1;
-    }
-
-    // ===== 鼠标拖动 + 惯性 =====
-
-    /// 处理鼠标按下
+    /// 处理指针按下
     void _onPointerDown(PointerDownEvent event)
     {
-        if (event.kind != PointerDeviceKind.mouse) return;
-        _stopInertia();
-        _isDragging = true;
-        _lastPointerPosition = event.position;
-        _dragVelocity = 0;
+        // 鼠标拖动
+        if (event.kind == PointerDeviceKind.mouse)
+        {
+            _stopInertia();
+            _isDragging = true;
+            _lastPointerPosition = event.position;
+            _dragVelocity = 0;
+        }
+
+        // 移动端触控：记录指针用于双指缩放
+        if (!_isDesktop && event.kind == PointerDeviceKind.touch)
+        {
+            _activePointers[event.pointer] = event.position;
+        }
     }
 
-    /// 处理鼠标移动
+    /// 处理指针移动
     void _onPointerMove(PointerMoveEvent event)
     {
-        if (!_isDragging || event.kind != PointerDeviceKind.mouse) return;
-        if (!_scrollController.hasClients) return;
+        // 鼠标拖动
+        if (_isDragging && event.kind == PointerDeviceKind.mouse)
+        {
+            if (!_scrollController.hasClients) return;
 
-        final delta = event.position - _lastPointerPosition;
-        _lastPointerPosition = event.position;
+            final delta = event.position - _lastPointerPosition;
+            _lastPointerPosition = event.position;
+            _dragVelocity = delta.dy;
 
-        // 记录速度（用于惯性）
-        _dragVelocity = delta.dy;
+            final newOffset = _scrollController.offset - delta.dy;
+            final maxExtent = _scrollController.position.maxScrollExtent;
+            _scrollController.jumpTo(newOffset.clamp(0.0, maxExtent));
+            return;
+        }
 
-        // 反向拖动：鼠标向下拖 → 内容向上滚（offset 增大）
-        final newOffset = _scrollController.offset - delta.dy;
-        final maxExtent = _scrollController.position.maxScrollExtent;
-        _scrollController.jumpTo(newOffset.clamp(0.0, maxExtent));
+        // 移动端双指缩放
+        if (!_isDesktop && event.kind == PointerDeviceKind.touch)
+        {
+            _activePointers[event.pointer] = event.position;
+            if (_activePointers.length == 2)
+            {
+                _handlePinchUpdate();
+            }
+        }
     }
 
-    /// 处理鼠标释放
+    /// 处理指针释放
     void _onPointerUp(PointerUpEvent event)
     {
-        if (!_isDragging) return;
-        _isDragging = false;
-
-        // 启动惯性滑动
-        if (_dragVelocity.abs() > 5)
+        // 鼠标拖动释放
+        if (_isDragging && event.kind == PointerDeviceKind.mouse)
         {
-            _startInertia(_dragVelocity);
+            _isDragging = false;
+            if (_dragVelocity.abs() > 5)
+            {
+                _startInertia(_dragVelocity);
+            }
+            return;
+        }
+
+        // 移动端触控释放
+        if (!_isDesktop && event.kind == PointerDeviceKind.touch)
+        {
+            _activePointers.remove(event.pointer);
+            if (_activePointers.length < 2)
+            {
+                _lastPinchDistance = 0;
+                // 缩放比例过小时恢复为1
+                if (_globalScale < 0.6)
+                {
+                    setState(() => _globalScale = 1.0);
+                }
+            }
+        }
+    }
+
+    /// 处理指针取消
+    void _onPointerCancel(PointerCancelEvent event)
+    {
+        if (!_isDesktop && event.kind == PointerDeviceKind.touch)
+        {
+            _activePointers.remove(event.pointer);
+            if (_activePointers.length < 2)
+            {
+                _lastPinchDistance = 0;
+            }
+        }
+    }
+
+    /// 处理双指缩放更新
+    void _handlePinchUpdate()
+    {
+        final pointers = _activePointers.values.toList();
+        if (pointers.length < 2) return;
+
+        final distance = (pointers[0] - pointers[1]).distance;
+        if (_lastPinchDistance > 0)
+        {
+            final ratio = distance / _lastPinchDistance;
+            final newScale = (_globalScale * ratio).clamp(0.5, 5.0);
+            if (newScale != _globalScale)
+            {
+                setState(() => _globalScale = newScale);
+            }
+        }
+        _lastPinchDistance = distance;
+    }
+
+    /// 单击/双击处理
+    void _onTap()
+    {
+        final now = DateTime.now();
+        if (_lastTapTime != null &&
+            now.difference(_lastTapTime!).inMilliseconds < 300)
+        {
+            // 双击：切换缩放
+            _lastTapTime = null;
+            setState(()
+            {
+                _globalScale = _globalScale > 1.5 ? 1.0 : 2.0;
+            });
+        }
+        else
+        {
+            _lastTapTime = now;
+            // 单击：切换控制栏（延迟判断是否双击）
+            Future.delayed(const Duration(milliseconds: 300), ()
+            {
+                if (_lastTapTime != null &&
+                    DateTime.now().difference(_lastTapTime!).inMilliseconds >= 280)
+                {
+                    setState(() => _showControls = !_showControls);
+                    _lastTapTime = null;
+                }
+            });
+        }
+    }
+
+    /// 水平滑动开始
+    void _onHorizontalDragStart(DragStartDetails details)
+    {
+        _isHorizontalDrag = true;
+    }
+
+    /// 水平滑动结束
+    void _onHorizontalDragEnd(DragEndDetails details)
+    {
+        if (!_isHorizontalDrag) return;
+        _isHorizontalDrag = false;
+
+        final velocity = details.primaryVelocity ?? 0;
+        // 向左快速滑动 → 下一章，向右快速滑动 → 上一章
+        if (velocity < -300 && _hasNextChapter)
+        {
+            _goToNextChapter();
+        }
+        else if (velocity > 300 && _hasPrevChapter)
+        {
+            _goToPrevChapter();
         }
     }
 
@@ -480,7 +660,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     {
         _inertiaController?.dispose();
 
-        // 惯性距离与速度成正比，方向与拖动方向相反
         final distance = velocity * 8;
         final duration = (distance.abs() / 2000 * 1000).clamp(200, 800).toInt();
 
@@ -525,7 +704,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         final maxExtent = _scrollController.position.maxScrollExtent;
         _scrollController.jumpTo(targetOffset.clamp(0.0, maxExtent));
 
-        // 到达边界时停止
         if (targetOffset <= 0 || targetOffset >= maxExtent)
         {
             _stopInertia();
@@ -537,13 +715,33 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     /// 处理键盘事件
     KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event)
     {
-        if (!_scrollController.hasClients) return KeyEventResult.ignored;
         if (event is! KeyDownEvent && event is! KeyRepeatEvent)
         {
             return KeyEventResult.ignored;
         }
 
         const scrollStep = 300.0;
+
+        // 左右方向键：切换章节
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft)
+        {
+            if (_hasPrevChapter)
+            {
+                _goToPrevChapter();
+                return KeyEventResult.handled;
+            }
+        }
+        else if (event.logicalKey == LogicalKeyboardKey.arrowRight)
+        {
+            if (_hasNextChapter)
+            {
+                _goToNextChapter();
+                return KeyEventResult.handled;
+            }
+        }
+
+        // 上下方向键：翻页
+        if (!_scrollController.hasClients) return KeyEventResult.ignored;
         final currentOffset = _scrollController.offset;
         final maxExtent = _scrollController.position.maxScrollExtent;
 
@@ -559,28 +757,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
             return KeyEventResult.handled;
         }
         else if (event.logicalKey == LogicalKeyboardKey.arrowDown)
-        {
-            _stopInertia();
-            final target = (currentOffset + scrollStep).clamp(0.0, maxExtent);
-            _scrollController.animateTo(
-                target,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-            );
-            return KeyEventResult.handled;
-        }
-        else if (event.logicalKey == LogicalKeyboardKey.arrowLeft)
-        {
-            _stopInertia();
-            final target = (currentOffset - scrollStep).clamp(0.0, maxExtent);
-            _scrollController.animateTo(
-                target,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-            );
-            return KeyEventResult.handled;
-        }
-        else if (event.logicalKey == LogicalKeyboardKey.arrowRight)
         {
             _stopInertia();
             final target = (currentOffset + scrollStep).clamp(0.0, maxExtent);
@@ -610,17 +786,17 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                     onPointerDown: _onPointerDown,
                     onPointerMove: _onPointerMove,
                     onPointerUp: _onPointerUp,
+                    onPointerCancel: _onPointerCancel,
                     child: GestureDetector(
-                        onTap: () => setState(() => _showControls = !_showControls),
-                        // 移动端全局双指缩放
-                        onScaleStart: _isDesktop ? null : _onScaleStart,
-                        onScaleUpdate: _isDesktop ? null : _onScaleUpdate,
-                        onScaleEnd: _isDesktop ? null : _onScaleEnd,
-                        onDoubleTap: _isDesktop ? null : _onDoubleTapScale,
+                        onTap: _onTap,
+                        onHorizontalDragStart: _onHorizontalDragStart,
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
                         child: Stack(
                             children: [
                                 _buildContent(),
-                                if (_showControls && !_initialLoading && _error == null)
+                                if (_chapterLoading) _buildChapterLoadingOverlay(),
+                                if (_showControls && !_initialLoading &&
+                                    !_chapterLoading && _error == null)
                                     _buildControls(),
                             ],
                         ),
@@ -693,17 +869,44 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         return _buildVerticalScroll(pages);
     }
 
+    /// 构建章节切换加载遮罩
+    Widget _buildChapterLoadingOverlay()
+    {
+        return Container(
+            color: Colors.black54,
+            child: Center(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        const CircularProgressIndicator(
+                            color: AppColors.accent,
+                            strokeWidth: 3,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                            '正在切换章节...',
+                            style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 14,
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+        );
+    }
+
     /// 构造单图 Widget（全局缩放通过调整图片宽度实现）
     Widget _buildImageForIndex(int index, List<String> pages)
     {
         final client = ref.watch(jmClientProvider);
         final loader = JmImageLoader(client);
-        final aid = int.tryParse(widget.photoId) ?? 0;
+        final aid = int.tryParse(_activePhotoId) ?? 0;
         final localPath = _findLocalPath(index);
 
         return OnlineImageViewer(
-            key: ValueKey('${widget.photoId}_$index'),
-            photoId: widget.photoId,
+            key: ValueKey('${_activePhotoId}_$index'),
+            photoId: _activePhotoId,
             filename: pages[index],
             scrambleId: _scrambleId,
             aid: aid,
@@ -719,7 +922,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         return ListView.builder(
             controller: _scrollController,
             itemCount: pages.length,
-            // PC端增加缓存范围以提升滚动流畅度
             scrollCacheExtent: ScrollCacheExtent.pixels(_isDesktop ? 800 : 400),
             itemBuilder: (context, index)
             {
@@ -732,14 +934,12 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     Widget _buildControls()
     {
         final total = _photoDetail?.pageArr.length ?? 0;
-        final episodeName = _findEpisodeInAlbum(widget.photoId)?.name ?? '';
+        final episodeName = _currentChapterName;
 
         return Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-                // 顶部控制栏
                 _buildTopBar(episodeName),
-                // 底部控制栏
                 _buildBottomBar(total),
             ],
         );
@@ -839,9 +1039,11 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                         children: [
                             // 上一章
                             IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                     Icons.skip_previous,
-                                    color: Colors.white,
+                                    color: _hasPrevChapter
+                                        ? Colors.white
+                                        : Colors.white24,
                                 ),
                                 onPressed: _hasPrevChapter
                                     ? _goToPrevChapter
@@ -875,9 +1077,11 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
                             const SizedBox(width: 16),
                             // 下一章
                             IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                     Icons.skip_next,
-                                    color: Colors.white,
+                                    color: _hasNextChapter
+                                        ? Colors.white
+                                        : Colors.white24,
                                 ),
                                 onPressed: _hasNextChapter
                                     ? _goToNextChapter
@@ -977,161 +1181,21 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     {
         if (_albumDetail == null || _albumDetail!.episodes.isEmpty) return;
 
-        final currentIdx = _currentEpisodeIndex;
-
         showModalBottomSheet(
             context: context,
-            backgroundColor: AppColors.surface,
-            shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
+            backgroundColor: Colors.transparent,
+            isScrollControlled: true,
             builder: (context)
             {
-                return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                        // 顶部拖拽条
-                        Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Container(
-                                width: 40,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                    color: AppColors.textDisabled,
-                                    borderRadius: BorderRadius.circular(2),
-                                ),
-                            ),
-                        ),
-                        // 标题
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Row(
-                                children: [
-                                    const Text(
-                                        '章节目录',
-                                        style: TextStyle(
-                                            color: AppColors.textPrimary,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                        ),
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                        '共 ${_albumDetail!.episodes.length} 章',
-                                        style: const TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 13,
-                                        ),
-                                    ),
-                                ],
-                            ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Divider(color: AppColors.divider, height: 1),
-                        // 章节列表
-                        Flexible(
-                            child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: _albumDetail!.episodes.length,
-                                itemBuilder: (context, index)
-                                {
-                                    final ep = _albumDetail!.episodes[index];
-                                    final isCurrent = index == currentIdx;
-                                    return ListTile(
-                                        dense: true,
-                                        contentPadding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 4,
-                                        ),
-                                        leading: CircleAvatar(
-                                            radius: 16,
-                                            backgroundColor: isCurrent
-                                                ? AppColors.accent
-                                                : AppColors.surfaceVariant,
-                                            child: Text(
-                                                ep.index,
-                                                style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: isCurrent
-                                                        ? Colors.black
-                                                        : AppColors.textPrimary,
-                                                ),
-                                            ),
-                                        ),
-                                        title: Text(
-                                            ep.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                                fontSize: 14,
-                                                color: isCurrent
-                                                    ? AppColors.accent
-                                                    : AppColors.textPrimary,
-                                                fontWeight: isCurrent
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                            ),
-                                        ),
-                                        trailing: isCurrent
-                                            ? const Icon(
-                                                Icons.play_circle_filled,
-                                                color: AppColors.accent,
-                                                size: 20,
-                                            )
-                                            : null,
-                                        onTap: ()
-                                        {
-                                            Navigator.of(context).pop();
-                                            if (!isCurrent)
-                                            {
-                                                _loadChapter(ep.photoId);
-                                            }
-                                        },
-                                    );
-                                },
-                            ),
-                        ),
-                        SizedBox(height: MediaQuery.of(context).padding.bottom),
-                    ],
+                return ChapterCatalogDrawer(
+                    episodes: _albumDetail!.episodes,
+                    currentPhotoId: _activePhotoId,
+                    onChapterSelected: (episode)
+                    {
+                        _loadChapter(episode.photoId);
+                    },
                 );
             },
         );
-    }
-
-    // ===== 移动端全局缩放 =====
-
-    /// 双指缩放开始
-    void _onScaleStart(ScaleStartDetails details)
-    {
-        _previousScale = _globalScale;
-    }
-
-    /// 双指缩放更新
-    void _onScaleUpdate(ScaleUpdateDetails details)
-    {
-        final newScale = (_previousScale * details.scale).clamp(0.5, 5.0);
-        if (newScale != _globalScale)
-        {
-            setState(() => _globalScale = newScale);
-        }
-    }
-
-    /// 双指缩放结束
-    void _onScaleEnd(ScaleEndDetails details)
-    {
-        // 缩放比例过小时恢复为1
-        if (_globalScale < 0.6)
-        {
-            setState(() => _globalScale = 1.0);
-        }
-    }
-
-    /// 双击切换缩放（1x ↔ 2x）
-    void _onDoubleTapScale()
-    {
-        setState(()
-        {
-            _globalScale = _globalScale > 1.5 ? 1.0 : 2.0;
-        });
     }
 }

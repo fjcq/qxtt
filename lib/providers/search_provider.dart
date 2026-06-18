@@ -9,6 +9,7 @@ import '../data/database/app_database.dart';
 import '../data/database/task_dao.dart';
 import '../data/database/library_dao.dart';
 import '../data/database/search_history_dao.dart';
+import '../data/models/search_history_model.dart';
 import 'config_provider.dart';
 
 /// 数据库 Provider
@@ -62,6 +63,15 @@ final searchHistoryDaoProvider = Provider<SearchHistoryDao>((ref)
 
 // ===== 以下为手动实现的 Notifier（不使用代码生成） =====
 
+/// 搜索类型映射：显示名称 → API 参数值
+const kSearchTypeMap = {
+    '站内': 'site',
+    '作者': 'author',
+    '标签': 'tag',
+    '作品': 'work',
+    '角色': 'character',
+};
+
 /// 搜索状态
 class SearchState
 {
@@ -72,6 +82,8 @@ class SearchState
     final int totalPages;
     final int total;
     final String query;
+    final String searchType;
+    final List<SearchHistoryModel> history;
 
     const SearchState({
         this.results = const [],
@@ -81,6 +93,8 @@ class SearchState
         this.totalPages = 0,
         this.total = 0,
         this.query = '',
+        this.searchType = 'site',
+        this.history = const [],
     });
 
     SearchState copyWith({
@@ -91,6 +105,8 @@ class SearchState
         int? totalPages,
         int? total,
         String? query,
+        String? searchType,
+        List<SearchHistoryModel>? history,
     })
     {
         return SearchState(
@@ -101,6 +117,8 @@ class SearchState
             totalPages: totalPages ?? this.totalPages,
             total: total ?? this.total,
             query: query ?? this.query,
+            searchType: searchType ?? this.searchType,
+            history: history ?? this.history,
         );
     }
 }
@@ -109,17 +127,33 @@ class SearchState
 class SearchNotifier extends StateNotifier<SearchState>
 {
     final JmClient _client;
+    final SearchHistoryDao _historyDao;
 
-    SearchNotifier(this._client) : super(const SearchState());
+    SearchNotifier(this._client, this._historyDao) : super(const SearchState())
+    {
+        _loadHistory();
+    }
+
+    /// 加载搜索历史
+    Future<void> _loadHistory() async
+    {
+        final history = await _historyDao.getAllHistory();
+        state = state.copyWith(history: history);
+    }
 
     /// 执行搜索
-    Future<void> search(String query, {String type = 'site', int page = 1}) async
+    Future<void> search(String query, {String? type, int page = 1}) async
     {
-        state = state.copyWith(isLoading: true, error: null, query: query);
+        final searchType = type ?? state.searchType;
+        state = state.copyWith(isLoading: true, error: null, query: query, searchType: searchType);
+
+        // 保存搜索历史
+        await _historyDao.addHistory(query);
+        final updatedHistory = await _historyDao.getAllHistory();
 
         try
         {
-            final result = await _client.search(query, page: page, searchType: type);
+            final result = await _client.search(query, page: page, searchType: searchType);
             state = state.copyWith(
                 results: page == 1
                     ? result.results
@@ -128,27 +162,61 @@ class SearchNotifier extends StateNotifier<SearchState>
                 currentPage: page,
                 totalPages: result.pageCount,
                 total: result.total,
+                history: updatedHistory,
             );
         }
         catch (e)
         {
-            state = state.copyWith(isLoading: false, error: e.toString());
+            state = state.copyWith(isLoading: false, error: e.toString(), history: updatedHistory);
+        }
+    }
+
+    /// 切换搜索类型
+    void setSearchType(String type)
+    {
+        state = state.copyWith(searchType: type);
+        // 如果已有查询词，用新类型重新搜索
+        if (state.query.isNotEmpty)
+        {
+            search(state.query, type: type);
         }
     }
 
     /// 加载更多
-    Future<void> loadMore({String type = 'site'}) async
+    Future<void> loadMore() async
     {
         if (state.isLoading) return;
         if (state.currentPage >= state.totalPages) return;
 
-        await search(state.query, type: type, page: state.currentPage + 1);
+        await search(state.query, page: state.currentPage + 1);
     }
 
-    /// 清空搜索
+    /// 删除单条搜索历史
+    Future<void> deleteHistory(String keyword) async
+    {
+        await _historyDao.deleteHistory(keyword);
+        final updatedHistory = await _historyDao.getAllHistory();
+        state = state.copyWith(history: updatedHistory);
+    }
+
+    /// 清空搜索历史
+    Future<void> clearHistory() async
+    {
+        await _historyDao.clearAllHistory();
+        state = state.copyWith(history: []);
+    }
+
+    /// 清空搜索结果
     void clear()
     {
-        state = const SearchState();
+        state = state.copyWith(
+            results: const [],
+            query: '',
+            currentPage: 1,
+            totalPages: 0,
+            total: 0,
+            error: null,
+        );
     }
 }
 
@@ -156,7 +224,8 @@ class SearchNotifier extends StateNotifier<SearchState>
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref)
 {
     final client = ref.watch(jmClientProvider);
-    return SearchNotifier(client);
+    final historyDao = ref.watch(searchHistoryDaoProvider);
+    return SearchNotifier(client, historyDao);
 });
 
 /// 本子详情状态

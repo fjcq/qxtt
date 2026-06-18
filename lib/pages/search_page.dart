@@ -8,30 +8,298 @@ import '../widgets/album_card.dart';
 import '../widgets/loading_widget.dart';
 import '../widgets/error_widget.dart';
 
-/// 搜索结果页
-class SearchPage extends ConsumerWidget
+/// 搜索页
+class SearchPage extends ConsumerStatefulWidget
 {
-    const SearchPage({super.key});
+    /// 初始搜索关键词
+    final String? initialQuery;
+
+    const SearchPage({super.key, this.initialQuery});
 
     @override
-    Widget build(BuildContext context, WidgetRef ref)
+    ConsumerState<SearchPage> createState() => _SearchPageState();
+}
+
+class _SearchPageState extends ConsumerState<SearchPage>
+{
+    final _searchController = TextEditingController();
+    final _searchFocusNode = FocusNode();
+
+    /// 搜索类型列表（显示名称）
+    static final _searchTypeLabels = kSearchTypeMap.keys.toList();
+
+    /// 当前选中的搜索类型索引
+    int _currentTypeIndex = 0;
+
+    @override
+    void initState()
+    {
+        super.initState();
+        if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty)
+        {
+            _searchController.text = widget.initialQuery!;
+            Future.microtask(() =>
+                ref.read(searchProvider.notifier).search(widget.initialQuery!),
+            );
+        }
+        else
+        {
+            // 无初始查询时自动弹出键盘
+            Future.microtask(() => _searchFocusNode.requestFocus());
+        }
+    }
+
+    @override
+    void dispose()
+    {
+        _searchController.dispose();
+        _searchFocusNode.dispose();
+        super.dispose();
+    }
+
+    /// 执行搜索
+    void _doSearch(String query)
+    {
+        if (query.trim().isEmpty) return;
+        _searchFocusNode.unfocus();
+        final type = kSearchTypeMap[_searchTypeLabels[_currentTypeIndex]] ?? 'site';
+        ref.read(searchProvider.notifier).search(
+            query.trim(),
+            type: type,
+        );
+    }
+
+    /// 切换搜索类型
+    void _onTypeChanged(int index)
+    {
+        setState(() => _currentTypeIndex = index);
+        final type = kSearchTypeMap[_searchTypeLabels[index]] ?? 'site';
+        ref.read(searchProvider.notifier).setSearchType(type);
+    }
+
+    @override
+    Widget build(BuildContext context)
     {
         final state = ref.watch(searchProvider);
+        final hasResults = state.results.isNotEmpty || state.isLoading;
 
         return Scaffold(
             appBar: AppBar(
-                title: Text(state.query),
                 leading: IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () => context.pop(),
                 ),
+                titleSpacing: 0,
+                title: _buildSearchField(),
+                actions: [
+                    TextButton(
+                        onPressed: () => _doSearch(_searchController.text),
+                        child: const Text(
+                            '搜索',
+                            style: TextStyle(
+                                color: AppColors.accent,
+                                fontSize: 15,
+                            ),
+                        ),
+                    ),
+                ],
             ),
-            body: _buildBody(context, ref, state),
+            body: hasResults
+                ? _buildResults(context, ref, state)
+                : _buildHistoryAndSuggestions(state),
         );
     }
 
-    /// 构建主体
-    Widget _buildBody(BuildContext context, WidgetRef ref, SearchState state)
+    /// 构建搜索输入框（AppBar 内）
+    Widget _buildSearchField()
+    {
+        return TextField(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+            ),
+            decoration: InputDecoration(
+                hintText: '搜索漫画...',
+                hintStyle: const TextStyle(color: AppColors.textDisabled),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (_, value, __)
+                    {
+                        if (value.text.isEmpty) return const SizedBox.shrink();
+                        return IconButton(
+                            icon: const Icon(
+                                Icons.clear,
+                                color: AppColors.textSecondary,
+                                size: 18,
+                            ),
+                            onPressed: ()
+                            {
+                                _searchController.clear();
+                                ref.read(searchProvider.notifier).clear();
+                            },
+                        );
+                    },
+                ),
+            ),
+            textInputAction: TextInputAction.search,
+            onSubmitted: _doSearch,
+        );
+    }
+
+    /// 构建搜索历史和搜索类型区域（无搜索结果时显示）
+    Widget _buildHistoryAndSuggestions(SearchState state)
+    {
+        return SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                    const SizedBox(height: 12),
+                    // 搜索类型切换
+                    _buildSearchTypeChips(),
+                    const SizedBox(height: 20),
+                    // 搜索历史
+                    if (state.history.isNotEmpty) ...[
+                        _buildHistoryHeader(),
+                        const SizedBox(height: 8),
+                        _buildHistoryList(state),
+                    ],
+                    // 空状态
+                    if (state.history.isEmpty)
+                        const Center(
+                            child: Padding(
+                                padding: EdgeInsets.only(top: 60),
+                                child: Text(
+                                    '输入关键词开始搜索',
+                                    style: TextStyle(
+                                        color: AppColors.textDisabled,
+                                        fontSize: 14,
+                                    ),
+                                ),
+                            ),
+                        ),
+                ],
+            ),
+        );
+    }
+
+    /// 构建搜索类型切换标签
+    Widget _buildSearchTypeChips()
+    {
+        return SizedBox(
+            height: 36,
+            child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _searchTypeLabels.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index)
+                {
+                    final isSelected = index == _currentTypeIndex;
+                    return GestureDetector(
+                        onTap: () => _onTypeChanged(index),
+                        child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.accent
+                                    : AppColors.surfaceVariant,
+                                borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                                _searchTypeLabels[index],
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? AppColors.background
+                                        : AppColors.textSecondary,
+                                ),
+                            ),
+                        ),
+                    );
+                },
+            ),
+        );
+    }
+
+    /// 构建搜索历史标题栏
+    Widget _buildHistoryHeader()
+    {
+        return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+                const Text(
+                    '搜索历史',
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                    ),
+                ),
+                GestureDetector(
+                    onTap: () => ref.read(searchProvider.notifier).clearHistory(),
+                    child: const Text(
+                        '清空',
+                        style: TextStyle(
+                            color: AppColors.textDisabled,
+                            fontSize: 13,
+                        ),
+                    ),
+                ),
+            ],
+        );
+    }
+
+    /// 构建搜索历史列表
+    Widget _buildHistoryList(SearchState state)
+    {
+        return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: state.history.map((item)
+            {
+                final keyword = item.keyword;
+                return GestureDetector(
+                    onTap: ()
+                    {
+                        _searchController.text = keyword;
+                        _doSearch(keyword);
+                    },
+                    onLongPress: () => ref.read(searchProvider.notifier).deleteHistory(keyword),
+                    child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant,
+                            borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(
+                            keyword,
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                            ),
+                        ),
+                    ),
+                );
+            }).toList(),
+        );
+    }
+
+    /// 构建搜索结果列表
+    Widget _buildResults(BuildContext context, WidgetRef ref, SearchState state)
     {
         if (state.isLoading && state.results.isEmpty)
         {
@@ -48,10 +316,24 @@ class SearchPage extends ConsumerWidget
 
         if (state.results.isEmpty)
         {
-            return const Center(
-                child: Text(
-                    '没有找到结果',
-                    style: TextStyle(color: AppColors.textSecondary),
+            return Center(
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                        const Icon(
+                            Icons.search_off,
+                            size: 48,
+                            color: AppColors.textDisabled,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                            '没有找到 "${state.query}" 的结果',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 14,
+                            ),
+                        ),
+                    ],
                 ),
             );
         }
@@ -69,6 +351,27 @@ class SearchPage extends ConsumerWidget
             },
             child: CustomScrollView(
                 slivers: [
+                    // 搜索类型切换（结果页顶部）
+                    SliverToBoxAdapter(
+                        child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                            child: _buildSearchTypeChips(),
+                        ),
+                    ),
+                    // 结果数量
+                    SliverToBoxAdapter(
+                        child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            child: Text(
+                                '共 ${state.total} 条结果',
+                                style: const TextStyle(
+                                    color: AppColors.textDisabled,
+                                    fontSize: 12,
+                                ),
+                            ),
+                        ),
+                    ),
+                    // 结果网格
                     SliverPadding(
                         padding: const EdgeInsets.all(8),
                         sliver: SliverGrid(
@@ -115,7 +418,7 @@ class SearchPage extends ConsumerWidget
                             padding: const EdgeInsets.all(16),
                             child: Center(
                                 child: Text(
-                                    '第 ${state.currentPage} / ${state.totalPages} 页  共 ${state.total} 条',
+                                    '第 ${state.currentPage} / ${state.totalPages} 页',
                                     style: const TextStyle(
                                         color: AppColors.textDisabled,
                                         fontSize: 12,
