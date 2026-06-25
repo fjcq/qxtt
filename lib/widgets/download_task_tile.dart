@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../providers/download_provider.dart';
 import '../theme/app_colors.dart';
+import '../utils/file_helper.dart';
 import 'download_progress.dart';
 
 /// 单个下载任务展示卡片
@@ -272,22 +273,37 @@ import 'download_progress.dart';
         const size = 56.0;
         final radius = BorderRadius.circular(8);
         final coverPath = task.coverPath ?? '';
-        Widget content;
-        if (coverPath.isNotEmpty && File(coverPath).existsSync())
+
+        if (coverPath.isEmpty)
         {
-            content = Image.file(
-                File(coverPath),
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _statusIconBox(context, size),
+            return ClipRRect(
+                borderRadius: radius,
+                child: _statusIconBox(context, size),
             );
         }
-        else
-        {
-            content = _statusIconBox(context, size);
-        }
-        return ClipRRect(borderRadius: radius, child: content);
+
+        return ClipRRect(
+            borderRadius: radius,
+            child: FutureBuilder<bool>(
+                future: FileExistenceCache.fileExists(coverPath),
+                builder: (context, snapshot)
+                {
+                    final hasCover = snapshot.data ?? false;
+                    if (hasCover)
+                    {
+                        return Image.file(
+                            File(coverPath),
+                            width: size,
+                            height: size,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _statusIconBox(context, size),
+                        );
+                    }
+                    return _statusIconBox(context, size);
+                },
+            ),
+        );
     }
 
     /// 状态图标方块（缩略图缺图时回退）

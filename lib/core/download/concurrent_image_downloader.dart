@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import '../common/app_logger.dart';
 import '../jm/jm_client.dart';
 import '../jm/jm_image.dart';
+import '../../utils/file_helper.dart';
 
 /// 并发信号量
 ///
@@ -132,15 +133,25 @@ Future<ImageDownloadResult> downloadOneImageWithDecode({
     final savePath = '$saveDir/${(pageIndex + 1).toString().padLeft(5, '0')}.jpg';
     final okPath = '$savePath.ok';
 
-    // 已存在且有效则跳过
-    if (File(savePath).existsSync() && File(okPath).existsSync())
+    // 异步检查：已存在且有效则跳过
+    final saveExists = await FileExistenceCache.fileExists(savePath);
+    final okExists = saveExists && await FileExistenceCache.fileExists(okPath);
+    if (saveExists && okExists)
     {
-        return ImageDownloadResult(
-            filename: filename,
-            pageIndex: pageIndex,
-            success: true,
-            bytes: File(savePath).lengthSync(),
-        );
+        try
+        {
+            final bytes = await File(savePath).length();
+            return ImageDownloadResult(
+                filename: filename,
+                pageIndex: pageIndex,
+                success: true,
+                bytes: bytes,
+            );
+        }
+        catch (_)
+        {
+            // 文件可能被删除，继续下载
+        }
     }
 
     try
@@ -163,8 +174,9 @@ Future<ImageDownloadResult> downloadOneImageWithDecode({
         );
 
         final f = File(savePath);
+        final fExists = await f.exists();
         final needDecodeAnyway = !downloaded &&
-            f.existsSync() &&
+            fExists &&
             JmImage.isUndecodedWebp(savePath);
 
         if (downloaded || needDecodeAnyway)
@@ -177,7 +189,7 @@ Future<ImageDownloadResult> downloadOneImageWithDecode({
             );
         }
 
-        final bytes = f.existsSync() ? f.lengthSync() : 0;
+        final bytes = fExists ? await f.length() : 0;
         return ImageDownloadResult(
             filename: filename,
             pageIndex: pageIndex,
@@ -224,7 +236,7 @@ Future<void> _decodeAndSave(
         final okPath = '$savePath.ok';
         try
         {
-            if (File(okPath).existsSync())
+            if (await File(okPath).exists())
             {
                 await File(okPath).delete();
             }
@@ -243,6 +255,9 @@ Future<void> _decodeAndSave(
         );
         await File(savePath).writeAsBytes(decoded);
         await File(okPath).writeAsString('');
+        // 写入后使缓存失效，确保后续检查能感知新文件
+        FileExistenceCache.invalidate(savePath);
+        FileExistenceCache.invalidate(okPath);
         _logger.d('[解密] 成功: $filename, '
             'before=${bytes.length}, after=${decoded.length}');
     }

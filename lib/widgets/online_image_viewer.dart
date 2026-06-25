@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import '../core/reader/reader_download_engine.dart';
 import '../core/reader/reader_image_loader.dart';
 import '../theme/app_colors.dart';
+import '../utils/chapter_complete_helper.dart';
+import '../utils/file_helper.dart';
 
 /// 在线阅读单图组件
 /// 负责单张图片的加载、显示、重试
 /// 加载优先级：
-///   1. 已下载的本地文件（[localFilePath] + .ok 标记）
+///   1. 已下载的本地文件（章节级 `.complete` 标记或单页 `.ok` 标记）
 ///   2. 阅读本地缓存
 ///   3. 临时解密缓存
 ///   4. 网络下载（多线程引擎）
@@ -120,10 +122,12 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
 
         try
         {
-            // 1. 已下载的本地文件优先（必须有 .ok 标记）
+            // 1. 已下载的本地文件优先
+            // 【性能优化 P2】优先检查章节级 `.complete`，存在则整章有效；
+            // 否则回退到单页 `.ok` 检查（兼容边下边看场景）
+            // 走 FileExistenceCache 5s 缓存，避免高频 existsSync 阻塞 UI
             if (widget.localFilePath != null &&
-                File(widget.localFilePath!).existsSync() &&
-                File('${widget.localFilePath!}.ok').existsSync())
+                await _isLocalReady(widget.localFilePath!))
             {
                 setState(() => _stage = '本地');
                 final localFile = File(widget.localFilePath!);
@@ -227,6 +231,31 @@ class _OnlineImageViewerState extends State<OnlineImageViewer>
                 );
             },
         );
+    }
+
+    /// 判断本地文件是否就绪可读
+    ///
+    /// 【性能优化 P2】
+    /// - 优先检查章节级 `.complete`：存在则整章有效，仅需 .jpg 存在即可
+    /// - 回退到单页 `.ok` 检查（兼容边下边看场景）
+    Future<bool> _isLocalReady(String localFilePath) async
+    {
+        if (localFilePath.isEmpty) return false;
+        // 1. 章节级 .complete 命中 → 整章有效
+        final sep = Platform.pathSeparator;
+        final lastSep = localFilePath.lastIndexOf(sep);
+        if (lastSep > 0)
+        {
+            final chapterDir = localFilePath.substring(0, lastSep);
+            if (await ChapterCompleteHelper.isChapterComplete(chapterDir))
+            {
+                return await FileExistenceCache.fileExists(localFilePath);
+            }
+        }
+        // 2. 回退到单页 .ok 检查
+        final saveExists = await FileExistenceCache.fileExists(localFilePath);
+        if (!saveExists) return false;
+        return await FileExistenceCache.fileExists('$localFilePath.ok');
     }
 
     /// 加载中

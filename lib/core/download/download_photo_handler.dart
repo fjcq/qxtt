@@ -52,7 +52,7 @@ extension DownloadServicePhotoHandler on DownloadService
             final completed = <int>{};
             for (var i = 0; i < photoDetail.pageArr.length; i++)
             {
-                if (_isImageDownloaded(saveDir, i)) completed.add(i);
+                if (await _isImageDownloaded(saveDir, i)) completed.add(i);
             }
 
             // 写入初始进度
@@ -111,15 +111,25 @@ extension DownloadServicePhotoHandler on DownloadService
                 if (task.albumTitle.isNotEmpty && task.episodeIndex.isNotEmpty)
                 {
                     final albumDir = Directory(saveDir).parent.path;
-                    await LibraryStorage.updateAlbumMetadataWithEpisode(
+                    // 一并持久化 scrambleId + pageArr，
+                    // 阅读器离线打开时可跳过 getPhotoDetail / getScrambleId 网络请求
+                    await LibraryStorage.saveChapterMetadata(
                         albumDir,
                         photoId: photoId,
                         index: task.episodeIndex,
                         name: task.episodeName,
+                        scrambleId: scrambleId,
+                        pageArr: photoDetail.pageArr,
                         albumId: task.albumId,
                         title: task.albumTitle,
                     );
                 }
+                // 【性能优化 P2】单章下载完成时写章节级 .complete，
+                // 并删除该章节所有 .ok 碎片文件
+                await ChapterCompleteHelper.markChapterComplete(
+                    saveDir, photoDetail.pageArr.length,
+                );
+                await ChapterCompleteHelper.removeAllOkMarks(saveDir);
                 _emitStatusWithPayload(
                     taskId, 'completed', '下载完成', 1.0, [photoId],
                     localCoverPath: coverPath,
@@ -237,12 +247,24 @@ extension DownloadServicePhotoHandler on DownloadService
         await Future.wait(futures);
     }
 
-    /// 单图是否已存在且有效
-    bool _isImageDownloaded(String saveDir, int pageIndex)
+    /// 单图是否已存在且有效（异步，避免阻塞事件循环）
+    ///
+    /// 【性能优化 P2】
+    /// - 优先检查章节级 `.complete`：存在则整章有效，无需逐页 stat
+    /// - 章节未完成时回退到单页 `.ok` 检查（兼容边下边看场景）
+    Future<bool> _isImageDownloaded(String saveDir, int pageIndex) async
     {
         final savePath = '$saveDir${Platform.pathSeparator}${(pageIndex + 1).toString().padLeft(5, '0')}.jpg';
+        // 1. 章节级 .complete 命中 → 整章有效
+        if (await ChapterCompleteHelper.isChapterComplete(saveDir))
+        {
+            return await FileExistenceCache.fileExists(savePath);
+        }
+        // 2. 回退到单页 .ok 检查
         final okPath = '$savePath.ok';
-        return File(savePath).existsSync() && File(okPath).existsSync();
+        final saveExists = await FileExistenceCache.fileExists(savePath);
+        if (!saveExists) return false;
+        return await FileExistenceCache.fileExists(okPath);
     }
 
     /// 确保 photo 任务有 cover.jpg

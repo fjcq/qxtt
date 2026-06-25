@@ -18,20 +18,62 @@ class AlbumSizeStats
     const AlbumSizeStats({required this.sizeBytes, required this.fileCount});
 }
 
-/// 书架数据访问对象（JSON文件持久化）
+/// 书架数据访问对象（每本子一个 JSON 文件 + 索引文件）
+///
+/// 【性能优化 P2 - 路线图第三阶段】
+/// 旧实现：所有本子序列化为单个 `library_albums.json` 文件，
+/// 每次更新单个本子都要全量重写整个文件，O(N) 写入开销。
+///
+/// 新实现：
+/// - `library_index.json`：轻量索引，仅存 albumId 列表
+/// - `library_albums/{albumId}.json`：单个本子的完整数据
+/// - 更新单个本子只写该本子文件，O(1) 写入开销
+/// - 索引仅在 add/remove 时更新
+///
+/// 数据迁移：首次启动检测旧 `library_albums.json`，自动拆分迁移到新结构
 class LibraryDao
 {
     List<LibraryAlbumModel> _albums = [];
+    final Set<String> _albumIds = {};
     bool _loaded = false;
 
-    /// 获取存储文件路径
-    Future<String> _getFilePath() async
+    /// 获取旧版全量文件路径（用于迁移检测）
+    Future<String> _getLegacyFilePath() async
     {
         final dir = await getApplicationSupportDirectory();
         return '${dir.path}${Platform.pathSeparator}library_albums.json';
     }
 
-    /// 确保数据已从文件加载
+    /// 获取本子数据存储目录
+    Future<String> _getAlbumsDir() async
+    {
+        final dir = await getApplicationSupportDirectory();
+        return '${dir.path}${Platform.pathSeparator}library_albums';
+    }
+
+    /// 获取索引文件路径
+    Future<String> _getIndexPath() async
+    {
+        final dir = await getApplicationSupportDirectory();
+        return '${dir.path}${Platform.pathSeparator}library_index.json';
+    }
+
+    /// 获取单个本子文件路径
+    /// albumId 可能含特殊字符，做 sanitize 避免文件系统错误
+    Future<String> _getAlbumFilePath(String albumId) async
+    {
+        final albumsDir = await _getAlbumsDir();
+        final safeId = _sanitizeAlbumId(albumId);
+        return '$albumsDir${Platform.pathSeparator}$safeId.json';
+    }
+
+    /// 替换 Windows 文件系统不允许的字符为下划线
+    String _sanitizeAlbumId(String albumId)
+    {
+        return albumId.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    }
+
+    /// 确保数据已从文件加载（含旧版迁移）
     Future<void> _ensureLoaded() async
     {
         if (_loaded) return;
@@ -39,12 +81,39 @@ class LibraryDao
 
         try
         {
-            final file = File(await _getFilePath());
-            if (await file.exists())
+            // 1. 旧版数据迁移
+            await _migrateLegacyIfNeeded();
+
+            // 2. 加载索引
+            final indexFile = File(await _getIndexPath());
+            if (await indexFile.exists())
             {
-                final content = await file.readAsString();
+                final content = await indexFile.readAsString();
                 final jsonList = jsonDecode(content) as List<dynamic>;
-                _albums = jsonList.map((e) => _fromJson(e as Map<String, dynamic>)).toList();
+                _albumIds.clear();
+                for (final e in jsonList)
+                {
+                    _albumIds.add(e.toString());
+                }
+            }
+
+            // 3. 加载所有本子文件
+            _albums = [];
+            for (final albumId in _albumIds)
+            {
+                final album = await _loadAlbumFile(albumId);
+                if (album != null)
+                {
+                    _albums.add(album);
+                }
+            }
+
+            // 4. 索引与实际文件不一致时修正索引
+            if (_albums.length != _albumIds.length)
+            {
+                _albumIds.clear();
+                _albumIds.addAll(_albums.map((a) => a.albumId));
+                await _saveIndex();
             }
         }
         catch (_)
@@ -53,22 +122,122 @@ class LibraryDao
         }
     }
 
-    /// 保存数据到文件
-    Future<void> _save() async
+    /// 旧版全量文件迁移到每本子一个文件的结构
+    Future<void> _migrateLegacyIfNeeded() async
     {
         try
         {
-            final file = File(await _getFilePath());
-            // 显式创建父目录，避免在 Windows 首次运行时因
-            // getApplicationSupportDirectory 返回的子目录尚未创建而写入失败
+            final legacyFile = File(await _getLegacyFilePath());
+            if (!await legacyFile.exists()) return;
+
+            final indexFile = File(await _getIndexPath());
+            // 索引已存在说明已迁移过，跳过
+            if (await indexFile.exists()) return;
+
+            // 读取旧版全量文件
+            final content = await legacyFile.readAsString();
+            final jsonList = jsonDecode(content) as List<dynamic>;
+            final albums = jsonList
+                .map((e) => _fromJson(e as Map<String, dynamic>))
+                .toList();
+
+            // 创建本子目录
+            final albumsDir = Directory(await _getAlbumsDir());
+            await albumsDir.create(recursive: true);
+
+            // 写入每个本子单独文件
+            final ids = <String>[];
+            for (final album in albums)
+            {
+                await _writeAlbumFile(album);
+                ids.add(album.albumId);
+            }
+
+            // 写入索引
+            await indexFile.parent.create(recursive: true);
+            await indexFile.writeAsString(jsonEncode(ids), flush: true);
+
+            // 删除旧版文件
+            await legacyFile.delete();
+        }
+        catch (_)
+        {
+            // 迁移失败不阻塞应用启动，下次启动会重试
+        }
+    }
+
+    /// 加载单个本子文件
+    Future<LibraryAlbumModel?> _loadAlbumFile(String albumId) async
+    {
+        try
+        {
+            final file = File(await _getAlbumFilePath(albumId));
+            if (!await file.exists()) return null;
+            final content = await file.readAsString();
+            final json = jsonDecode(content) as Map<String, dynamic>;
+            return _fromJson(json);
+        }
+        catch (_)
+        {
+            return null;
+        }
+    }
+
+    /// 写入单个本子文件（增量保存核心）
+    Future<void> _writeAlbumFile(LibraryAlbumModel album) async
+    {
+        try
+        {
+            final file = File(await _getAlbumFilePath(album.albumId));
             await file.parent.create(recursive: true);
-            final jsonList = _albums.map((a) => _toJson(a)).toList();
-            await file.writeAsString(jsonEncode(jsonList), flush: true);
+            await file.writeAsString(
+                jsonEncode(_toJson(album)), flush: true,
+            );
         }
         catch (_)
         {
             // 忽略写入失败
         }
+    }
+
+    /// 删除单个本子文件
+    Future<void> _deleteAlbumFile(String albumId) async
+    {
+        try
+        {
+            final file = File(await _getAlbumFilePath(albumId));
+            if (await file.exists())
+            {
+                await file.delete();
+            }
+        }
+        catch (_)
+        {
+            // 忽略删除失败
+        }
+    }
+
+    /// 保存索引文件
+    Future<void> _saveIndex() async
+    {
+        try
+        {
+            final file = File(await _getIndexPath());
+            await file.parent.create(recursive: true);
+            await file.writeAsString(
+                jsonEncode(_albumIds.toList()), flush: true,
+            );
+        }
+        catch (_)
+        {
+            // 忽略写入失败
+        }
+    }
+
+    /// 增量保存：只写单个本子文件（不动索引）
+    Future<void> _saveAlbum(LibraryAlbumModel album) async
+    {
+        await _writeAlbumFile(album);
     }
 
     /// 模型转JSON
@@ -120,7 +289,12 @@ class LibraryDao
     {
         await _ensureLoaded();
         _albums.insert(0, album);
-        await _save();
+        final isNew = _albumIds.add(album.albumId);
+        await _saveAlbum(album);
+        if (isNew)
+        {
+            await _saveIndex();
+        }
     }
 
     /// 获取所有书架项
@@ -137,7 +311,19 @@ class LibraryDao
         return _albums.where((a) => a.albumId == albumId).firstOrNull;
     }
 
-    /// 更新阅读进度
+    /// 根据 photoId（章节 ID）查找所属本子
+    /// 阅读器入口优先调用此方法，避免 `getAllAlbums` 全量复制 + 线性搜索
+    Future<LibraryAlbumModel?> getAlbumByPhotoId(String photoId) async
+    {
+        await _ensureLoaded();
+        for (final album in _albums)
+        {
+            if (album.downloadedEpisodes.contains(photoId)) return album;
+        }
+        return null;
+    }
+
+    /// 更新阅读进度（增量保存，只写单个本子）
     Future<void> updateReadProgress(
         String albumId,
         int page, {
@@ -154,7 +340,7 @@ class LibraryDao
                 album.lastReadPhotoId = photoId;
             }
             album.lastReadAt = DateTime.now().toIso8601String();
-            await _save();
+            await _saveAlbum(album);
         }
     }
 
@@ -163,18 +349,35 @@ class LibraryDao
     {
         await _ensureLoaded();
         _albums.removeWhere((a) => a.albumId == albumId);
-        await _save();
+        final removed = _albumIds.remove(albumId);
+        await _deleteAlbumFile(albumId);
+        if (removed)
+        {
+            await _saveIndex();
+        }
     }
 
     /// 批量移除书架项
-    /// 一次移除多个 albumId，避免多次 _save() 带来的 IO 开销
+    /// 一次移除多个 albumId，避免多次索引写入
     Future<void> removeAlbums(Iterable<String> albumIds) async
     {
         await _ensureLoaded();
         final idSet = albumIds.toSet();
         if (idSet.isEmpty) return;
         _albums.removeWhere((a) => idSet.contains(a.albumId));
-        await _save();
+        var indexChanged = false;
+        for (final id in idSet)
+        {
+            await _deleteAlbumFile(id);
+            if (_albumIds.remove(id))
+            {
+                indexChanged = true;
+            }
+        }
+        if (indexChanged)
+        {
+            await _saveIndex();
+        }
     }
 
     /// 更新指定 album 的本地占用统计（字节/文件数）
@@ -190,11 +393,10 @@ class LibraryDao
         if (album == null) return;
         if (sizeBytes != null) album.sizeBytes = sizeBytes;
         if (fileCount != null) album.fileCount = fileCount;
-        await _save();
+        await _saveAlbum(album);
     }
 
-    /// 一次性更新多个 album 的占用统计
-    /// 传入 albumId -> 统计 的映射
+    /// 一次性更新多个 album 的占用统计（增量保存每个本子）
     Future<void> updateAlbumsSize(Map<String, AlbumSizeStats> statsMap) async
     {
         await _ensureLoaded();
@@ -205,27 +407,39 @@ class LibraryDao
             if (album == null) continue;
             album.sizeBytes = entry.value.sizeBytes;
             album.fileCount = entry.value.fileCount;
+            await _saveAlbum(album);
         }
-        await _save();
     }
 
     /// 更新指定 album 的封面路径
-    /// 用于在远端拉取封面或本子首张图兜底后回填
     Future<void> updateAlbumCover(String albumId, String coverPath) async
     {
         await _ensureLoaded();
         final album = _albums.where((a) => a.albumId == albumId).firstOrNull;
         if (album == null) return;
         album.coverPath = coverPath;
-        await _save();
+        await _saveAlbum(album);
     }
 
     /// 清空整个书架
     Future<void> clearAll() async
     {
         await _ensureLoaded();
+        final albumsDir = Directory(await _getAlbumsDir());
+        if (await albumsDir.exists())
+        {
+            try
+            {
+                await albumsDir.delete(recursive: true);
+            }
+            catch (_)
+            {
+                // 忽略
+            }
+        }
         _albums = [];
-        await _save();
+        _albumIds.clear();
+        await _saveIndex();
     }
 
     /// 扫描下载目录（空实现）
@@ -252,12 +466,15 @@ class LibraryDao
                 ..pageCount = album.pageCount > 0 ? album.pageCount : existing.pageCount
                 ..episodeCount = album.episodeCount > 0 ? album.episodeCount : existing.episodeCount
                 ..downloadedEpisodes = merged;
+            await _saveAlbum(existing);
         }
         else
         {
             _albums.insert(0, album);
+            _albumIds.add(album.albumId);
+            await _saveAlbum(album);
+            await _saveIndex();
         }
-        await _save();
     }
 
     /// 将指定章节标记为已下载
@@ -293,6 +510,7 @@ class LibraryDao
                 ..pageCount = (pageCount != null && pageCount > 0) ? pageCount : existing.pageCount
                 ..episodeCount = (episodeCount != null && episodeCount > 0) ? episodeCount : existing.episodeCount
                 ..downloadedEpisodes = merged;
+            await _saveAlbum(existing);
         }
         else
         {
@@ -308,8 +526,10 @@ class LibraryDao
                 ..addedAt = DateTime.now().toIso8601String()
                 ..lastReadPage = 0;
             _albums.insert(0, album);
+            _albumIds.add(album.albumId);
+            await _saveAlbum(album);
+            await _saveIndex();
         }
-        await _save();
     }
 
     /// 从已下载列表中移除指定章节
@@ -330,8 +550,14 @@ class LibraryDao
         if (album.downloadedEpisodes.isEmpty)
         {
             _albums.removeAt(index);
+            _albumIds.remove(albumId);
+            await _deleteAlbumFile(albumId);
+            await _saveIndex();
         }
-        await _save();
+        else
+        {
+            await _saveAlbum(album);
+        }
     }
 
     /// 获取指定本子的已下载章节 ID 集合

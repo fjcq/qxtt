@@ -114,18 +114,22 @@ mixin ReaderContentMixin<T extends ConsumerStatefulWidget>
     }
 
     /// 本地图片渲染
+    ///
+    /// 【性能优化】
+    /// - 移动端：cacheWidth = displayWidth * 2，避免大图占满内存
+    /// - 桌面端：cacheWidth 上限 3840（4K），平衡高清显示与内存压力
     Widget _buildLocalImage(String path) {
         return LayoutBuilder(
             builder: (context, constraints) {
                 final displayWidth = constraints.maxWidth * globalScale;
+                final cacheWidth = _resolveCacheWidth(displayWidth);
                 return ColoredBox(
                     color: Colors.black,
                     child: Image.file(
                         File(path),
                         width: displayWidth,
                         fit: BoxFit.contain,
-                        cacheWidth:
-                            isDesktop ? null : (displayWidth * 2).toInt(),
+                        cacheWidth: cacheWidth,
                         errorBuilder: (context, error, stackTrace) {
                             return Container(
                                 color: context.appColors.surface,
@@ -141,6 +145,21 @@ mixin ReaderContentMixin<T extends ConsumerStatefulWidget>
                 );
             },
         );
+    }
+
+    /// 根据平台与显示宽度计算图片解码缓存宽度
+    /// 返回 null 表示让框架按原始尺寸解码（仅用于极少数需要原片的场景）
+    int? _resolveCacheWidth(double displayWidth) {
+        if (isDesktop) {
+            // 桌面端：上限 4K，避免超大图导致内存压力
+            const desktopMaxCacheWidth = 3840;
+            final target = (displayWidth * 2).toInt();
+            return target < desktopMaxCacheWidth
+                ? target
+                : desktopMaxCacheWidth;
+        }
+        // 移动端：按显示宽度 2 倍解码，节省内存
+        return (displayWidth * 2).toInt();
     }
 
     /// 网络图片渲染（与在线阅读一致）

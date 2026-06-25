@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/jm/jm_entity.dart';
 import '../../data/models/library_album_model.dart';
 import '../../providers/library_provider.dart';
+import '../../utils/file_helper.dart';
 import '../../utils/library_storage.dart';
 import '../../utils/path_helper.dart';
 import 'reader_base_mixin.dart';
@@ -13,6 +14,13 @@ import 'reader_base_mixin.dart';
 ///
 /// 负责从书架与本地目录结构扫描图片、重建 [AlbumDetail] 与章节目录映射。
 /// 依赖 [ReaderBaseMixin] 提供当前章节 ID 与本子详情状态。
+///
+/// 【性能优化】
+/// - 所有 IO 操作异步化（[scanDirectoryForImages] / [isPageDownloaded]）
+/// - [isPageDownloaded] 走 [FileExistenceCache] 5s 缓存，避免重复 stat
+/// - 加载本地元数据时一并读取章节级扩展元数据（scrambleId + pageArr），
+///   阅读器离线打开时可跳过 getPhotoDetail / getScrambleId 网络请求
+/// - [tryRebuildAlbumFromLibrary] 子目录检查并行化
 mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMixin<T>
 {
     /// 本子详情是否来自网络 API
@@ -21,11 +29,20 @@ mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMix
     /// 本地重构的章节目录映射：photoId -> 图片目录绝对路径
     Map<String, String>? _localEpisodeDirs;
 
+    /// 章节级扩展元数据：photoId -> (scrambleId + pageArr)
+    Map<String, ChapterMetadata>? _localChapterMetadata;
+
     /// 本子详情是否来自网络 API
     bool get albumDetailFromApi => _albumDetailFromApi;
 
     /// 设置本子详情来源标记
     set albumDetailFromApi(bool value) => _albumDetailFromApi = value;
+
+    /// 获取本地缓存的章节扩展元数据（可能为 null 表示未加载）
+    ChapterMetadata? getLocalChapterMetadata(String photoId)
+    {
+        return _localChapterMetadata?[photoId];
+    }
 
     /// 扫描指定章节的本地图片文件
     Future<List<String>> scanChapterImages(
@@ -45,20 +62,20 @@ mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMix
                     PathHelper.sanitizeFileName(albumDetail!.name),
                     PathHelper.sanitizeFileName(episode.index),
                 );
-                paths.addAll(scanDirectoryForImages(albumDir));
+                paths.addAll(await scanDirectoryForImages(albumDir));
             }
         }
 
         if (paths.isEmpty) {
             final localDirs = _localEpisodeDirs;
             if (localDirs != null && localDirs.containsKey(photoId)) {
-                paths.addAll(scanDirectoryForImages(localDirs[photoId]!));
+                paths.addAll(await scanDirectoryForImages(localDirs[photoId]!));
             }
         }
 
         if (paths.isEmpty) {
             final photoDir = '$downloadRoot$sep$photoId';
-            paths.addAll(scanDirectoryForImages(photoDir));
+            paths.addAll(await scanDirectoryForImages(photoDir));
         }
 
         return paths;
@@ -101,32 +118,56 @@ mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMix
         return '$downloadRoot$sep$photoId$sep$seq.jpg';
     }
 
-    /// 判断指定页码对应的本地文件是否已下载完成（包含 .ok 标记）
-    bool isPageDownloaded(String? expectedPath) {
+    /// 判断指定页码对应的本地文件是否已下载完成
+    ///
+    /// 【性能优化 P2】
+    /// - 优先检查章节级 `.complete`：存在则整章有效，无需逐页 stat
+    /// - 章节未完成时回退到单页 `.ok` 检查（兼容边下边看场景）
+    /// - 走 [FileExistenceCache] 5s 缓存，避免高频 stat 系统调用
+    Future<bool> isPageDownloaded(String? expectedPath) async
+    {
         if (expectedPath == null || expectedPath.isEmpty) return false;
-        return File(expectedPath).existsSync() &&
-            File('$expectedPath.ok').existsSync();
+        final sep = Platform.pathSeparator;
+        final chapterDir = expectedPath.substring(
+            0, expectedPath.lastIndexOf(sep),
+        );
+        // 1. 章节级 .complete 命中 → 整章有效，仅检查目标 .jpg 是否存在
+        if (await ChapterCompleteHelper.isChapterComplete(chapterDir))
+        {
+            return await FileExistenceCache.fileExists(expectedPath);
+        }
+        // 2. 回退到单页 .ok 检查
+        final saveExists = await FileExistenceCache.fileExists(expectedPath);
+        if (!saveExists) return false;
+        return await FileExistenceCache.fileExists('$expectedPath.ok');
     }
 
-    /// 扫描目录中的图片文件（按文件名排序）
-    List<String> scanDirectoryForImages(String dirPath) {
+    /// 扫描目录中的图片文件（按文件名排序，异步遍历避免阻塞 UI）
+    Future<List<String>> scanDirectoryForImages(String dirPath) async
+    {
         final dir = Directory(dirPath);
-        if (!dir.existsSync()) return [];
+        if (!await dir.exists()) return [];
 
         final files = <File>[];
-        try {
-            for (final entity in dir.listSync()) {
-                if (entity is File) {
+        try
+        {
+            await for (final entity in dir.list(followLinks: false))
+            {
+                if (entity is File)
+                {
                     final name = entity.path.toLowerCase();
                     if (name.endsWith('.jpg') ||
                         name.endsWith('.jpeg') ||
                         name.endsWith('.png') ||
-                        name.endsWith('.webp')) {
+                        name.endsWith('.webp'))
+                    {
                         files.add(entity);
                     }
                 }
             }
-        } catch (_) {
+        }
+        catch (_)
+        {
             return [];
         }
 
@@ -140,14 +181,10 @@ mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMix
     ) async {
         if (downloadRoot == null) return null;
 
-        final albums = await ref.read(libraryProvider.notifier).getAllAlbums();
-        LibraryAlbumModel? matchedAlbum;
-        for (final album in albums) {
-            if (album.downloadedEpisodes.contains(activePhotoId)) {
-                matchedAlbum = album;
-                break;
-            }
-        }
+        // 【性能优化】优先用 photoId 索引查询，避免 getAllAlbums 全量复制 + 线性搜索
+        final matchedAlbum = await ref
+            .read(libraryProvider.notifier)
+            .getAlbumByPhotoId(activePhotoId);
         if (matchedAlbum == null) return null;
 
         final albumDir = await LibraryStorage.resolveAlbumDir(
@@ -157,23 +194,38 @@ mixin ReaderAlbumRebuildMixin<T extends ConsumerStatefulWidget> on ReaderBaseMix
         final dir = Directory(albumDir);
         if (!await dir.exists()) return matchedAlbum;
 
-        final (metaDetail, metaDirs) =
-            await LibraryStorage.loadAlbumMetadata(albumDir);
+        // 加载本地元数据（含章节级扩展元数据：scrambleId + pageArr）
+        final (metaDetail, metaDirs, metaChapters) =
+            await LibraryStorage.loadAlbumMetadataWithChapters(albumDir);
         if (metaDetail != null && metaDirs.isNotEmpty) {
             _localEpisodeDirs = metaDirs;
+            _localChapterMetadata = metaChapters;
             albumDetail ??= metaDetail;
             return matchedAlbum;
         }
 
+        // 无元数据：扫描目录结构重建
         final candidateDirs = <Directory>[];
         try {
-            if (await directoryHasImages(albumDir)) {
+            // 子目录检查并行化，避免 N+1 串行 stat
+            final subDirChecks = <Future<bool>>[];
+            final selfCheck = directoryHasImages(albumDir);
+            final subEntities = <FileSystemEntity>[];
+            await for (final entity in dir.list(followLinks: false)) {
+                if (entity is Directory) {
+                    subEntities.add(entity);
+                    subDirChecks.add(directoryHasImages(entity.path));
+                }
+            }
+            final selfHasImages = await selfCheck;
+            if (selfHasImages) {
                 candidateDirs.add(dir);
             }
-            await for (final entity in dir.list(followLinks: false)) {
-                if (entity is! Directory) continue;
-                final hasImages = await directoryHasImages(entity.path);
-                if (hasImages) candidateDirs.add(entity);
+            final subResults = await Future.wait(subDirChecks);
+            for (var i = 0; i < subResults.length; i++) {
+                if (subResults[i]) {
+                    candidateDirs.add(subEntities[i] as Directory);
+                }
             }
         } catch (_) {
             return matchedAlbum;

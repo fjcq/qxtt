@@ -313,47 +313,32 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
   }
 
   /// 计算本地文件路径（如果已下载整本）
+  ///
+  /// 【性能优化】
+  /// - 仅构造两个明确路径（整本目录 / 单章直传目录），不做同步 IO 检查
+  /// - 实际存在性由 [OnlineImageViewer] 内部走 [FileExistenceCache] 异步检查
+  /// - 删除原先的 `root.listSync(recursive: true)` 递归全盘扫描，
+  ///   该操作在书架有几十个本子时可能耗时数百毫秒到数秒
   String? _findLocalPath(int pageIndex) {
     if (_photoDetail == null || _downloadRoot == null) return null;
-    final seq = (pageIndex + 1).toString().padLeft(5, '0');
     final sep = Platform.pathSeparator;
+    final seq = (pageIndex + 1).toString().padLeft(5, '0');
 
-    final photoDirPath = '$_downloadRoot$sep$activePhotoId$sep$seq.jpg';
-    if (File(photoDirPath).existsSync() &&
-        File('$photoDirPath.ok').existsSync()) {
-      return photoDirPath;
-    }
-
+    // 1. 整本下载目录优先：{downloadRoot}/{albumTitle}/{episodeIndex}/{seq}.jpg
     if (albumDetail != null) {
       final episode = findEpisodeInAlbum(activePhotoId);
       if (episode != null) {
-        final albumPath = PathHelper.getPagePath(
+        return PathHelper.getPagePath(
           _downloadRoot!,
           albumDetail!.name,
           episode.index,
           pageIndex,
         );
-        if (File(albumPath).existsSync() &&
-            File('$albumPath.ok').existsSync()) {
-          return albumPath;
-        }
       }
     }
 
-    try {
-      final root = Directory(_downloadRoot!);
-      if (!root.existsSync()) return null;
-      for (final entity in root.listSync(recursive: true)) {
-        if (entity is File &&
-            entity.path.endsWith('$seq.jpg') &&
-            entity.path.contains(activePhotoId)) {
-          return entity.path;
-        }
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
+    // 2. 单章直传目录兜底：{downloadRoot}/{photoId}/{seq}.jpg
+    return '$_downloadRoot$sep$activePhotoId$sep$seq.jpg';
   }
 
   /// 重试获取本子详情（用于章节导航）

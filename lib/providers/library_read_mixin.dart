@@ -121,6 +121,13 @@ mixin LibraryReadMixin on LibraryNotifierBase
         return libraryDao.getByAlbumId(albumId);
     }
 
+    /// 根据 photoId（章节 ID）获取所属本子
+    /// 阅读器入口优先调用此方法，避免 `getAllAlbums` 全量复制 + 线性搜索
+    Future<LibraryAlbumModel?> getAlbumByPhotoId(String photoId) async
+    {
+        return libraryDao.getAlbumByPhotoId(photoId);
+    }
+
     /// 获取所有书架项
     Future<List<LibraryAlbumModel>> getAllAlbums() async
     {

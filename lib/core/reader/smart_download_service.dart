@@ -223,7 +223,15 @@ class SmartDownloadService
                 episodeIndex: episodeIndex,
                 episodeName: episodeName,
                 albumId: albumId,
+                scrambleId: scrambleId,
+                pageArr: photoDetail.pageArr,
             );
+            // 【性能优化 P2】智能下载完成时写章节级 .complete，
+            // 并删除该章节所有 .ok 碎片文件
+            await ChapterCompleteHelper.markChapterComplete(
+                saveDir, photoDetail.pageArr.length,
+            );
+            await ChapterCompleteHelper.removeAllOkMarks(saveDir);
         }
         catch (e)
         {
@@ -345,6 +353,8 @@ class SmartDownloadService
         required String episodeIndex,
         required String episodeName,
         required String albumId,
+        required int scrambleId,
+        required List<String> pageArr,
     }) async
     {
         try
@@ -355,11 +365,15 @@ class SmartDownloadService
             if (albumTitle.isNotEmpty && episodeIndex.isNotEmpty)
             {
                 final albumDir = Directory(saveDir).parent.path;
-                await LibraryStorage.updateAlbumMetadataWithEpisode(
+                // 一并持久化 scrambleId + pageArr，
+                // 阅读器离线打开时可跳过 getPhotoDetail / getScrambleId 网络请求
+                await LibraryStorage.saveChapterMetadata(
                     albumDir,
                     photoId: photoId,
                     index: episodeIndex,
                     name: episodeName,
+                    scrambleId: scrambleId,
+                    pageArr: pageArr,
                     albumId: albumId,
                     title: albumTitle,
                 );

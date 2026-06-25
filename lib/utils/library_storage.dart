@@ -19,6 +19,7 @@ export 'album_file_deleter.dart';
 export 'album_force_delete.dart';
 export 'album_metadata_storage.dart';
 export 'album_path_resolver.dart';
+export 'chapter_complete_helper.dart';
 
 /// 已下载漫画的本地文件操作外观类
 /// 负责：计算占用、清理文件、扫描本地目录、元数据管理
@@ -36,10 +37,13 @@ class LibraryStorage
     /// 保存本子元数据到本地目录
     static Future<void> saveAlbumMetadata(
         String albumDir,
-        AlbumDetail albumDetail,
-    ) async
+        AlbumDetail albumDetail, {
+        Map<String, ChapterMetadata>? chapters,
+    }) async
     {
-        return AlbumMetadataStorage.saveAlbumMetadata(albumDir, albumDetail);
+        return AlbumMetadataStorage.saveAlbumMetadata(
+            albumDir, albumDetail, chapters: chapters,
+        );
     }
 
     /// 加载本子元数据
@@ -48,6 +52,16 @@ class LibraryStorage
     ) async
     {
         return AlbumMetadataStorage.loadAlbumMetadata(albumDir);
+    }
+
+    /// 加载本子元数据（含章节级扩展元数据：scrambleId + pageArr）
+    static Future<(
+        AlbumDetail?,
+        Map<String, String>,
+        Map<String, ChapterMetadata>
+    )> loadAlbumMetadataWithChapters(String albumDir) async
+    {
+        return AlbumMetadataStorage.loadAlbumMetadataWithChapters(albumDir);
     }
 
     /// 将单章信息追加或更新到本子元数据
@@ -66,6 +80,32 @@ class LibraryStorage
             photoId: photoId,
             index: index,
             name: name,
+            albumId: albumId,
+            title: title,
+            author: author,
+        );
+    }
+
+    /// 增量写入单章节的扩展元数据（scrambleId + pageArr）
+    static Future<void> saveChapterMetadata(
+        String albumDir, {
+        required String photoId,
+        required String index,
+        required String name,
+        required int scrambleId,
+        required List<String> pageArr,
+        String? albumId,
+        String? title,
+        String? author,
+    }) async
+    {
+        return AlbumMetadataStorage.saveChapterMetadata(
+            albumDir,
+            photoId: photoId,
+            index: index,
+            name: name,
+            scrambleId: scrambleId,
+            pageArr: pageArr,
             albumId: albumId,
             title: title,
             author: author,

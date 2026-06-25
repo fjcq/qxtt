@@ -10,6 +10,7 @@ import '../../data/database/task_dao.dart';
 import '../../data/models/download_task_model.dart';
 import '../../utils/library_storage.dart';
 import '../../utils/path_helper.dart';
+import '../../utils/file_helper.dart';
 import 'concurrent_image_downloader.dart';
 
 part 'download_progress_event.dart';

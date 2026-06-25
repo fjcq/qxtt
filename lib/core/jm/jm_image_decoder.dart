@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/services.dart'
+    show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 import 'package:image/image.dart' as img;
 
 /// 解密参数（跨 isolate 传输）
@@ -263,10 +265,13 @@ class JmImage
     /// 解密单张禁漫图片（异步，推荐使用）
     /// 输入：加密的原始图片字节
     /// 输出：解密后的 JPEG 字节
-    /// 流程：
-    ///   1) 主线程：用 [ui.instantiateImageCodec] 平台原生解码（解决 image 包 RangeError）
-    ///   2) 主线程：判断是否需要 unscramble，in-place 修改 RGBA
-    ///   3) compute isolate：[img.encodeJpg] 编码为 JPEG（不阻塞 UI）
+    ///
+    /// 【性能优化 P2】
+    /// 整个解码流程（platformDecode + decodeImagePixels + encodeJpg）全部在
+    /// Isolate 中执行，主线程完全不阻塞，大图解码时 UI 不再卡顿。
+    /// 使用 [Isolate.run] 替代 [compute]，以便从主 isolate 传递 [RootIsolateToken]
+    /// 给后台 isolate，使其能调用 [ui.instantiateImageCodec] 等 platform API。
+    ///
     /// [scrambleId] 章节 scramble_id
     /// [aid] 本子 ID（整数）
     /// [filename] 图片文件名
@@ -277,22 +282,28 @@ class JmImage
         String filename,
     ) async
     {
-        // 1. 平台解码（主线程）
-        final decoded = await platformDecode(imageBytes, filename);
-
-        // 2. 判断是否需要分割解密
-        final num = getSegmentationNum(scrambleId, aid, filename);
-        if (num > 0)
+        if (imageBytes.isEmpty)
         {
-            // in-place 修改 decoded.rgba
-            decodeImagePixels(decoded.rgba, decoded.width, decoded.height, num);
+            throw Exception('图片字节为空: $filename');
         }
-
-        // 3. JPEG 编码（compute isolate，不阻塞 UI）
-        return await compute(
-            _encodeRgbaAsJpegInIsolate,
-            _EncodeJpegArgs(decoded.rgba, decoded.width, decoded.height),
+        // 从主 isolate 获取 RootIsolateToken，传给后台 isolate
+        final token = RootIsolateToken.instance;
+        final args = _DecodeFullArgs(
+            bytes: imageBytes,
+            scrambleId: scrambleId,
+            aid: aid,
+            filename: filename,
         );
+        return await Isolate.run(() async
+        {
+            // 在后台 isolate 中初始化 binary messenger，
+            // 使 [ui.instantiateImageCodec] 能调用 platform decoder
+            if (token != null)
+            {
+                BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+            }
+            return await _decodeFullInIsolate(args);
+        });
     }
 
     /// 旧版同步解码（仅供 [decodeImageInIsolate] 兼容用）
@@ -425,24 +436,101 @@ class JmImage
     }
 }
 
-/// compute 跨 isolate 传输：RGBA → JPEG 编码参数
-class _EncodeJpegArgs
+/// compute 跨 isolate 传输：完整解码参数
+/// 包含原始字节 + 解密参数，用于把整个解码流程迁移到 Isolate
+class _DecodeFullArgs
 {
-    final Uint8List rgba;
-    final int width;
-    final int height;
+    final Uint8List bytes;
+    final int scrambleId;
+    final int aid;
+    final String filename;
 
-    const _EncodeJpegArgs(this.rgba, this.width, this.height);
+    const _DecodeFullArgs({
+        required this.bytes,
+        required this.scrambleId,
+        required this.aid,
+        required this.filename,
+    });
 }
 
-/// compute isolate 入口：把 RGBA 像素编码为 JPEG
-/// 此函数必须保持 sync（compute() 的 callback 是 sync）
-Uint8List _encodeRgbaAsJpegInIsolate(_EncodeJpegArgs args)
+/// compute isolate 入口：完整解码流程（platformDecode + 像素重排 + JPEG 编码）
+///
+/// Flutter 3.7+ 后 [ui.instantiateImageCodec] 在后台 Isolate 可用，
+/// 将整个解码流程放入 Isolate 后主线程完全不阻塞，大图解码时 UI 不卡顿。
+/// 失败时抛出与原 [JmImage.platformDecode] 一致格式的异常，便于上层排查。
+Future<Uint8List> _decodeFullInIsolate(_DecodeFullArgs args) async
 {
-    final img.Image image = img.Image.fromBytes(
-        width: args.width,
-        height: args.height,
-        bytes: args.rgba.buffer,
+    if (args.bytes.isEmpty)
+    {
+        throw Exception('图片字节为空: ${args.filename}');
+    }
+
+    ui.Codec codec;
+    try
+    {
+        codec = await ui.instantiateImageCodec(args.bytes);
+    }
+    catch (e)
+    {
+        throw Exception(
+            '图片解码失败(instantiateImageCodec): ${args.filename}, '
+            'bytes=${args.bytes.length}, '
+            'err=${e.runtimeType}: $e',
+        );
+    }
+
+    ui.FrameInfo frame;
+    try
+    {
+        frame = await codec.getNextFrame();
+    }
+    catch (e)
+    {
+        codec.dispose();
+        throw Exception(
+            '图片帧获取失败: ${args.filename}, '
+            'bytes=${args.bytes.length}, '
+            'err=${e.runtimeType}: $e',
+        );
+    }
+
+    final uiImage = frame.image;
+    final width = uiImage.width;
+    final height = uiImage.height;
+
+    final ByteData? byteData = await uiImage.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+    );
+    uiImage.dispose();
+    codec.dispose();
+
+    if (byteData == null)
+    {
+        throw Exception(
+            '图片字节转换失败(toByteData): ${args.filename}, '
+            'bytes=${args.bytes.length}, ${width}x$height',
+        );
+    }
+
+    // 复制到独立 buffer，避免依赖 native memory 视图
+    final rgba = Uint8List.fromList(
+        byteData.buffer.asUint8List(0, byteData.lengthInBytes),
+    );
+
+    // 像素重排（解密）
+    final num = JmImage.getSegmentationNum(
+        args.scrambleId, args.aid, args.filename,
+    );
+    if (num > 0)
+    {
+        JmImage.decodeImagePixels(rgba, width, height, num);
+    }
+
+    // JPEG 编码
+    final image = img.Image.fromBytes(
+        width: width,
+        height: height,
+        bytes: rgba.buffer,
         numChannels: 4,
         order: img.ChannelOrder.rgba,
     );

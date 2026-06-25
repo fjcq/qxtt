@@ -87,7 +87,7 @@ extension DownloadServiceAlbumHandler on DownloadService
                 final saveDir = '$albumDir${Platform.pathSeparator}$safeEpisodeIndex';
                 for (var i = 0; i < detail.pageArr.length; i++)
                 {
-                    if (_isImageDownloaded(saveDir, i))
+                    if (await _isImageDownloaded(saveDir, i))
                     {
                         completedImages.add(_AlbumImageKey(episode.photoId, i));
                     }
@@ -206,6 +206,12 @@ extension DownloadServiceAlbumHandler on DownloadService
                         if (_isEpisodeComplete(detail.pageArr.length, episode.photoId, completedImages))
                         {
                             downloadedPhotoIds.add(episode.photoId);
+                            // 【性能优化 P2】整章完成时写章节级 .complete 标记，
+                            // 并删除该章节所有 .ok 碎片文件
+                            await ChapterCompleteHelper.markChapterComplete(
+                                saveDir, detail.pageArr.length,
+                            );
+                            await ChapterCompleteHelper.removeAllOkMarks(saveDir);
                             _emitPartialProgress(
                                 taskId,
                                 albumDetail,
@@ -263,7 +269,25 @@ extension DownloadServiceAlbumHandler on DownloadService
                         : '',
                 );
                 final localPath = albumDir;
-                await LibraryStorage.saveAlbumMetadata(albumDir, albumDetail);
+                // 一并持久化每个章节的 scrambleId + pageArr，
+                // 阅读器离线打开时可跳过 getPhotoDetail / getScrambleId 网络请求
+                final chapters = <String, ChapterMetadata>{};
+                for (final episode in albumDetail.episodes)
+                {
+                    final detail = detailByPhotoId[episode.photoId];
+                    if (detail == null) continue;
+                    chapters[episode.photoId] = ChapterMetadata(
+                        photoId: episode.photoId,
+                        index: episode.index,
+                        name: episode.name,
+                        scrambleId: scrambleIds[episode.photoId] ?? 0,
+                        pageArr: detail.pageArr,
+                    );
+                }
+                await LibraryStorage.saveAlbumMetadata(
+                    albumDir, albumDetail,
+                    chapters: chapters,
+                );
                 _emitStatusWithPayload(
                     taskId, 'completed', '下载完成', 1.0,
                     downloadedPhotoIds.toList(),
@@ -315,12 +339,24 @@ extension DownloadServiceAlbumHandler on DownloadService
         return true;
     }
 
-    /// 单图是否已存在且有效
-    bool _isImageDownloaded(String saveDir, int pageIndex)
+    /// 单图是否已存在且有效（异步，避免阻塞事件循环）
+    ///
+    /// 【性能优化 P2】
+    /// - 优先检查章节级 `.complete`：存在则整章有效，无需逐页 stat
+    /// - 章节未完成时回退到单页 `.ok` 检查（兼容边下边看场景）
+    Future<bool> _isImageDownloaded(String saveDir, int pageIndex) async
     {
         final savePath = '$saveDir${Platform.pathSeparator}${(pageIndex + 1).toString().padLeft(5, '0')}.jpg';
+        // 1. 章节级 .complete 命中 → 整章有效
+        if (await ChapterCompleteHelper.isChapterComplete(saveDir))
+        {
+            return await FileExistenceCache.fileExists(savePath);
+        }
+        // 2. 回退到单页 .ok 检查
         final okPath = '$savePath.ok';
-        return File(savePath).existsSync() && File(okPath).existsSync();
+        final saveExists = await FileExistenceCache.fileExists(savePath);
+        if (!saveExists) return false;
+        return await FileExistenceCache.fileExists(okPath);
     }
 
     /// 发送增量进度事件（用于 library 实时同步已完成的章节）
