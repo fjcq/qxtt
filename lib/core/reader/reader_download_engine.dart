@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import '../common/app_logger.dart';
+import '../download/concurrent_image_downloader.dart';
 import '../jm/jm_client.dart';
 import '../jm/jm_image.dart';
+import '../../utils/file_helper.dart';
 import 'network_monitor.dart';
 
 /// 下载任务优先级
@@ -268,6 +272,154 @@ class ReaderDownloadEngine
         _queue.clear();
         _networkMonitor.dispose();
         _progressController.close();
+    }
+
+    /// 下载单张图片并持久化到本地
+    ///
+    /// 【统一阅读】
+    /// 与 [enqueue] 不同，本方法不走优先级队列调度，而是直接调用
+    /// [downloadOneImageWithDecode] 完成"下载 + 解密 + 写盘 + 写 .ok"全流程，
+    /// 返回本地文件绝对路径供阅读器 [Image.file] 直接渲染。
+    ///
+    /// - [photoId] 章节 ID
+    /// - [filename] 图片文件名（如 "00001.jpg"）
+    /// - [saveDir] 章节本地目录
+    /// - [scrambleId] 解密参数
+    /// - [aid] 作品 ID（整数）
+    /// - [priority] 下载优先级（仅用于事件标记，不影响调度顺序）
+    ///
+    /// 返回：本地文件绝对路径
+    ///
+    /// 异常：
+    /// - 离线状态下抛 [StateError]
+    /// - 下载失败抛出原始异常
+    Future<String> downloadAndSave({
+        required String photoId,
+        required String filename,
+        required String saveDir,
+        required int scrambleId,
+        required int aid,
+        DownloadPriority priority = DownloadPriority.immediate,
+        CancelToken? cancelToken,
+    }) async
+    {
+        if (_disposed)
+        {
+            throw StateError('ReaderDownloadEngine 已释放');
+        }
+        // 离线状态拒绝下载（已存在的本地文件仍可被读取）
+        if (_networkMonitor.isOffline)
+        {
+            throw StateError('当前处于离线状态');
+        }
+
+        // 确保章节目录存在
+        await Directory(saveDir).create(recursive: true);
+
+        // 解析页码与本地路径（与 downloadOneImageWithDecode 保持一致）
+        // 注意：filename 形如 "00001.jpg"，但本地保存的页码索引需通过文件名前缀推导
+        final pageIndex = _parsePageIndexFromFilename(filename);
+        final savePath = '$saveDir${Platform.pathSeparator}'
+            '${(pageIndex + 1).toString().padLeft(5, '0')}.jpg';
+        final okPath = '$savePath.ok';
+
+        // 命中缓存：本地已有 .jpg + .ok 则直接返回
+        final saveExists = await FileExistenceCache.fileExists(savePath);
+        final okExists = saveExists &&
+            await FileExistenceCache.fileExists(okPath);
+        if (saveExists && okExists)
+        {
+            return savePath;
+        }
+
+        // 发射进度事件
+        _emitRaw(
+            '${photoId}_$filename',
+            '下载中',
+            0.1,
+        );
+
+        try
+        {
+            final token = cancelToken ?? CancelToken();
+            final result = await downloadOneImageWithDecode(
+                client: _client,
+                cancelToken: token,
+                photoId: photoId,
+                filename: filename,
+                pageIndex: pageIndex,
+                saveDir: saveDir,
+                scrambleId: scrambleId,
+                aid: aid,
+            );
+
+            if (!result.success)
+            {
+                throw Exception('下载失败: $filename');
+            }
+
+            // 失效缓存让后续读取感知新文件
+            FileExistenceCache.invalidate(savePath);
+            FileExistenceCache.invalidate(okPath);
+
+            _emitRaw(
+                '${photoId}_$filename',
+                '完成',
+                1.0,
+                isDone: true,
+            );
+
+            return savePath;
+        }
+        catch (e, st)
+        {
+            appLogger.w('[reader_download] downloadAndSave 失败: '
+                '$photoId/$filename, $e');
+            _emitRaw(
+                '${photoId}_$filename',
+                '失败',
+                0.0,
+                error: e.toString(),
+            );
+            // 取消异常按原始路径返回
+            if (e is DioException && CancelToken.isCancel(e))
+            {
+                rethrow;
+            }
+            throw Exception('下载并保存失败: $e, $st');
+        }
+    }
+
+    /// 从文件名推导页码索引（0-based）
+    ///
+    /// JM 图片文件名形如 "00001.jpg"，去掉扩展名后转 int 减 1 即可。
+    /// 解析失败时返回 0（容错处理，避免越界）。
+    int _parsePageIndexFromFilename(String filename)
+    {
+        final dot = filename.lastIndexOf('.');
+        final seq = dot > 0 ? filename.substring(0, dot) : filename;
+        final parsed = int.tryParse(seq);
+        if (parsed == null || parsed < 1) return 0;
+        return parsed - 1;
+    }
+
+    /// 内部发射进度事件（不走队列，仅广播）
+    void _emitRaw(
+        String taskKey,
+        String stage,
+        double progress, {
+        bool isDone = false,
+        String? error,
+    })
+    {
+        if (_progressController.isClosed) return;
+        _progressController.add(ReaderDownloadProgress(
+            taskKey: taskKey,
+            stage: stage,
+            progress: progress,
+            isDone: isDone,
+            error: error,
+        ));
     }
 
     /// 队列排序：优先级高 → 低，同优先级先创建 → 后创建

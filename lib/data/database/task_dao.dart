@@ -86,6 +86,8 @@ class TaskDao
             'coverPageCount': task.coverPageCount,
             'coverEpisodeCount': task.coverEpisodeCount,
             'localPath': task.localPath,
+            // 持久化任务来源（统一阅读架构），旧数据缺失时回退为 'manual'
+            'source': task.source,
         };
     }
 
@@ -124,7 +126,9 @@ class TaskDao
             ..coverPageCount = (json['coverPageCount'] as num?)?.toInt() ?? 0
             ..coverEpisodeCount =
                 (json['coverEpisodeCount'] as num?)?.toInt() ?? 0
-            ..localPath = json['localPath']?.toString() ?? '';
+            ..localPath = json['localPath']?.toString() ?? ''
+            // 兼容旧数据：source 字段缺失时默认为 'manual'
+            ..source = json['source']?.toString() ?? 'manual';
     }
 
     /// 更新 firstPhotoId（album 任务下载完成后调用）

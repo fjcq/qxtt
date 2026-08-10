@@ -4,11 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/reader/reader_download_engine.dart';
-import '../../providers/config_provider.dart';
-import '../../providers/reader_providers.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/online_image_viewer.dart';
+import '../../widgets/waiting_page_placeholder.dart';
 import 'chapter_page_item.dart';
 import 'reader_chapter_mixin.dart';
 
@@ -17,11 +14,11 @@ import 'reader_chapter_mixin.dart';
 /// 负责构建加载中、错误、空数据以及图片列表等阅读内容。
 /// 依赖 [ReaderChapterMixin] 提供本地图片路径与加载状态。
 ///
-/// 【边下边看】
-/// 通过 [_buildPageItem] 渲染 [ChapterPageItem]：
-/// - [ChapterPageItem.hasLocal] 为 true → 直接 Image.file
-/// - [ChapterPageItem.needNetwork] 为 true → 走 OnlineImageViewer（与在线阅读一致）
-/// 缺失页下载到本地后会自动通过 .ok 标记识别为本地，刷新后展示本地图。
+/// 【统一阅读架构】
+/// 阅读器只读本地文件，未下载页通过 [WaitingPagePlaceholder] 显示占位与进度。
+/// 父级 [ReaderChapterMixin] 订阅 [DownloadService.onProgress]，
+/// 单页完成后会刷新对应 [ChapterPageItem] 的本地路径，
+/// 占位组件随之被 [Image.file] 替换，无需自身监听下载事件。
 mixin ReaderContentMixin<T extends ConsumerStatefulWidget>
     on ReaderChapterMixin<T> {
     @override
@@ -91,10 +88,17 @@ mixin ReaderContentMixin<T extends ConsumerStatefulWidget>
     }
 
     /// 纵向滚动模式
+    ///
+    /// 【性能优化】
+    /// - [addAutomaticKeepAlives]：保留可见项外的几个相邻页的 State，避免来回滚动重复解码
+    /// - [addRepaintBoundaries]：默认为 true，为每个 item 包 RepaintBoundary，
+    ///   setState 触发重建时不会让所有图片重新绘制，只有变化的页才会重绘
     Widget _buildVerticalScroll() {
         return ListView.builder(
             controller: scrollController,
             itemCount: chapterPages.length,
+            addAutomaticKeepAlives: true,
+            addRepaintBoundaries: true,
             scrollCacheExtent: ScrollCacheExtent.pixels(isDesktop ? 800 : 400),
             itemBuilder: (context, index) {
                 return _buildPageItem(chapterPages[index]);
@@ -102,15 +106,19 @@ mixin ReaderContentMixin<T extends ConsumerStatefulWidget>
         );
     }
 
-    /// 渲染单个章节页（混合渲染核心）
+    /// 渲染单个章节页（统一阅读架构：本地优先，未下载页占位）
+    ///
+    /// 【性能优化】
+    /// 用 [RepaintBoundary] 包裹每个页项，配合 [ListView.addRepaintBoundaries]
+    /// 形成独立绘制层。父级 setState 时各页独立合成，避免相邻图片被一起重绘
     Widget _buildPageItem(ChapterPageItem item) {
-        if (item.hasLocal) {
-            return _buildLocalImage(item.localPath!);
-        }
-        if (item.needNetwork) {
-            return _buildNetworkImage(item);
-        }
-        return _buildMissingPlaceholder(item);
+        return RepaintBoundary(
+            child: item.hasLocal
+                ? _buildLocalImage(item.localPath!)
+                : (item.needNetwork
+                    ? _buildWaitingPlaceholder(item)
+                    : _buildMissingPlaceholder(item)),
+        );
     }
 
     /// 本地图片渲染
@@ -162,27 +170,21 @@ mixin ReaderContentMixin<T extends ConsumerStatefulWidget>
         return (displayWidth * 2).toInt();
     }
 
-    /// 网络图片渲染（与在线阅读一致）
-    Widget _buildNetworkImage(ChapterPageItem item) {
-        final loader = ref.read(readerImageLoaderProvider);
-        final config = ref.read(configProvider).config;
-        final distance = (item.index - currentPage).abs();
-        final priority = distance == 0
-            ? DownloadPriority.immediate
-            : distance <= config.preloadPageCount
-                ? DownloadPriority.preload
-                : DownloadPriority.background;
-
-        return OnlineImageViewer(
-            key: ValueKey('${activePhotoId}_${item.index}'),
-            photoId: activePhotoId,
-            filename: item.filename!,
-            scrambleId: item.scrambleId,
-            aid: item.aid,
-            loader: loader,
-            localFilePath: null,
-            priority: priority,
-            scale: globalScale,
+    /// 未下载页占位组件
+    ///
+    /// 【统一阅读架构】
+    /// 章节本地未就绪时显示 [WaitingPagePlaceholder]，传入章节整体进度。
+    /// 父级订阅下载事件后会刷新对应 [ChapterPageItem] 的本地路径，
+    /// 该页随之从占位切换为 [Image.file]，无需自身监听流。
+    Widget _buildWaitingPlaceholder(ChapterPageItem item) {
+        return WaitingPagePlaceholder(
+            key: ValueKey('${activePhotoId}_${item.index}_waiting'),
+            pageIndex: item.index,
+            progress: chapterDownloadCompleted
+                ? 1.0
+                : (chapterDownloadTotal > 0 ? chapterDownloadProgress : null),
+            current: chapterDownloadCurrent,
+            total: chapterDownloadTotal,
         );
     }
 

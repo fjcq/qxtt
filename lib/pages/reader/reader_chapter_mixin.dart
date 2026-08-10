@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/download/download_service.dart';
 import '../../core/jm/jm_entity.dart';
 import '../../providers/config_provider.dart';
+import '../../providers/download_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/search_provider.dart';
+import '../../utils/file_helper.dart';
 import '../../utils/library_storage.dart';
 import 'chapter_page_item.dart';
 import 'reader_album_rebuild_mixin.dart';
@@ -73,8 +76,43 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
     /// 切换章节时优先复用缓存，避免重复网络请求
     final Map<String, _ChapterApiInfo> _chapterApiCache = {};
 
+    /// 章节下载订阅（统一阅读架构）
+    ///
+    /// 订阅 [DownloadService.onProgress] 流，按 [activePhotoId] 过滤事件，
+    /// 单页完成时刷新对应 [ChapterPageItem] 的本地路径。
+    StreamSubscription<DownloadProgressEvent>? _chapterDownloadSub;
+
+    /// 当前章节的本地保存目录（由 ensureChapterDownloaded 返回）
+    ///
+    /// 用于在收到单页完成事件时构造本地文件绝对路径。
+    String? _chapterSaveDir;
+
+    /// 章节下载进度：已下载页数
+    int _chapterDownloadCurrent = 0;
+
+    /// 章节下载进度：总页数
+    int _chapterDownloadTotal = 0;
+
+    /// 章节下载进度：0.0~1.0
+    double _chapterDownloadProgress = 0.0;
+
+    /// 章节是否已完成下载
+    bool _chapterDownloadCompleted = false;
+
     /// 章节页面项列表
     List<ChapterPageItem> get chapterPages => _chapterPages;
+
+    /// 章节下载进度（已下载页数）
+    int get chapterDownloadCurrent => _chapterDownloadCurrent;
+
+    /// 章节下载进度（总页数）
+    int get chapterDownloadTotal => _chapterDownloadTotal;
+
+    /// 章节下载进度（0.0~1.0）
+    double get chapterDownloadProgress => _chapterDownloadProgress;
+
+    /// 章节是否已完成下载
+    bool get chapterDownloadCompleted => _chapterDownloadCompleted;
 
     /// 当前章节的 PhotoDetail
     PhotoDetail? get activeChapterDetail => _activeChapterDetail;
@@ -94,8 +132,18 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
     @override
     int get currentPage => _estimatedPage;
 
+    /// 更新当前页码
+    ///
+    /// 【性能优化】
+    /// 不再触发 setState，仅同步 [_estimatedPage] 与 [currentPageNotifier]。
+    /// UI（如底部进度条、页码显示）通过 [ValueListenableBuilder] 监听
+    /// [currentPageNotifier] 局部重建，避免整个 reader 因页码变化而重建。
     @override
-    void setCurrentPage(int page) => setState(() => _estimatedPage = page);
+    void setCurrentPage(int page) {
+        if (page == _estimatedPage) return;
+        _estimatedPage = page;
+        currentPageNotifier.value = page;
+    }
 
     @override
     bool get isLoading => _isLoading;
@@ -114,6 +162,8 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
 
     @override
     void dispose() {
+        _chapterDownloadSub?.cancel();
+        _chapterDownloadSub = null;
         persistProgress();
         super.dispose();
     }
@@ -322,16 +372,25 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
                     _savedLastReadPage < pages.length;
                 if (shouldRestore) {
                     _estimatedPage = _savedLastReadPage;
+                    currentPageNotifier.value = _savedLastReadPage;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                         scrollToPage(_savedLastReadPage);
                     });
                 } else {
                     _estimatedPage = 0;
+                    currentPageNotifier.value = 0;
                     scrollController.jumpTo(0);
                 }
             }
 
             unawaited(_preloadAdjacentChapters());
+
+            // 【统一阅读架构】确保章节已下载并订阅进度事件
+            // 先阻塞获取 albumDetail（用于构造标准下载目录），
+            // 再 fire-and-forget 调用 ensureChapterDownloaded，
+            // 下载在后台执行，未下载页通过 WaitingPagePlaceholder 显示进度。
+            await _ensureAlbumDetailForDownload(photoId);
+            await _ensureChapterDownloadedAndSubscribe(photoId);
         } catch (e) {
             if (!mounted) return;
             setState(() {
@@ -648,6 +707,7 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
                 chapterLoading = false;
                 _estimatedPage = 0;
             });
+            currentPageNotifier.value = 0;
 
             if (scrollController.hasClients) {
                 final shouldRestore = photoId == _savedLastReadPhotoId &&
@@ -655,6 +715,7 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
                     _savedLastReadPage < pages.length;
                 if (shouldRestore) {
                     _estimatedPage = _savedLastReadPage;
+                    currentPageNotifier.value = _savedLastReadPage;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                         scrollToPage(_savedLastReadPage);
                     });
@@ -663,6 +724,12 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
                     scrollController.jumpTo(0);
                 }
             }
+
+            // 【统一阅读架构】确保章节已下载并订阅进度事件
+            // 章节切换时同样需要触发 ensureChapterDownloaded，
+            // 让下载任务在后台补齐缺失页，并通过事件自动刷新 UI。
+            await _ensureAlbumDetailForDownload(photoId);
+            await _ensureChapterDownloadedAndSubscribe(photoId);
 
             // 后台异步补充本子详情（用于章节导航）
             if (albumDetail == null) {
@@ -702,5 +769,189 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
             if (a[i] != b[i]) return false;
         }
         return true;
+    }
+
+    /// 同步获取 albumDetail（若缺失则阻塞获取）
+    ///
+    /// 【统一阅读架构】
+    /// 用于 [_ensureChapterDownloadedAndSubscribe] 前确保 [albumDetail] 可用。
+    /// 若 albumDetail 缺失，[DownloadService.ensureChapterDownloaded] 只能使用
+    /// fallback 路径（_downloadRoot/photoId），与已有标准目录不匹配会导致重复下载。
+    /// 因此在调用 ensureChapterDownloaded 前先阻塞获取 albumDetail。
+    Future<void> _ensureAlbumDetailForDownload(String photoId) async
+    {
+        if (albumDetail != null) return;
+        final apiInfo = _chapterApiCache[photoId];
+        if (apiInfo == null) return;
+        final albumId = apiInfo.detail.albumId;
+        if (albumId.isEmpty) return;
+        try
+        {
+            final client = ref.read(jmClientProvider);
+            final detail = await client.getAlbumDetail(albumId);
+            if (!mounted) return;
+            albumDetail = detail;
+            albumDetailFromApi = true;
+            _currentAlbumId = detail.albumId;
+        }
+        catch (e)
+        {
+            debugPrint('[reader] _ensureAlbumDetailForDownload 失败: $e');
+        }
+    }
+
+    /// 确保章节已下载并订阅下载事件
+    ///
+    /// 【统一阅读架构】
+    /// 1. 调用 [DownloadService.ensureChapterDownloaded] 创建/复用下载任务
+    /// 2. 章节已完整下载 → 标记完成，不订阅事件
+    /// 3. 章节未完成 → 订阅 [DownloadService.onProgress] 流，按 photoId 过滤
+    /// 4. 收到单页完成事件时刷新对应 [ChapterPageItem] 的 localPath
+    /// 5. 收到章节完成事件时标记整章就绪
+    Future<void> _ensureChapterDownloadedAndSubscribe(String photoId) async
+    {
+        try
+        {
+            final downloadService = ref.read(downloadServiceProvider);
+            final album = albumDetail;
+            final episode = album != null ? findEpisodeInAlbum(photoId) : null;
+
+            _chapterSaveDir = await downloadService.ensureChapterDownloaded(
+                photoId: photoId,
+                albumId: album?.albumId ?? _currentAlbumId,
+                title: album?.name ?? '',
+                episodeIndex: episode?.index ?? '',
+                episodeName: episode?.name ?? '',
+            );
+
+            // 重置进度状态（新章节或章节切换）
+            _chapterDownloadCurrent = 0;
+            _chapterDownloadTotal = 0;
+            _chapterDownloadProgress = 0.0;
+            _chapterDownloadCompleted = false;
+
+            // 章节已完整下载 → 标记完成，不订阅事件
+            if (_chapterSaveDir != null &&
+                await ChapterCompleteHelper.isChapterComplete(_chapterSaveDir!))
+            {
+                if (mounted)
+                {
+                    setState(() {
+                        _chapterDownloadCompleted = true;
+                        _chapterDownloadProgress = 1.0;
+                    });
+                }
+                return;
+            }
+
+            _subscribeToChapterDownload(photoId);
+        }
+        catch (e)
+        {
+            debugPrint('[reader] ensureChapterDownloaded 失败: $e');
+        }
+    }
+
+    /// 订阅章节下载进度事件
+    ///
+    /// 按 [photoId] 过滤事件，避免无关章节的事件干扰当前阅读。
+    /// 单页完成（status=pageCompleted）→ 刷新对应 [ChapterPageItem] 的本地路径
+    /// 章节完成（status=completed）→ 标记整章就绪
+    /// 进度更新（status=running）→ 更新进度字段供 UI 显示
+    void _subscribeToChapterDownload(String photoId)
+    {
+        _chapterDownloadSub?.cancel();
+        final downloadService = ref.read(downloadServiceProvider);
+        _chapterDownloadSub = downloadService.onProgress
+            .where((e) => e.photoId == photoId)
+            .listen((e) {
+                if (!mounted) return;
+                if (e.completedFilename != null)
+                {
+                    _onPageCompleted(
+                        photoId, e.completedFilename!,
+                        e.current, e.total, e.progress,
+                    );
+                }
+                else if (e.status == 'running')
+                {
+                    setState(() {
+                        _chapterDownloadCurrent = e.current;
+                        _chapterDownloadTotal = e.total;
+                        _chapterDownloadProgress = e.progress;
+                    });
+                }
+                else if (e.status == 'completed')
+                {
+                    setState(() {
+                        _chapterDownloadCurrent = e.total;
+                        _chapterDownloadTotal = e.total;
+                        _chapterDownloadProgress = 1.0;
+                        _chapterDownloadCompleted = true;
+                    });
+                }
+            });
+    }
+
+    /// 单页下载完成：刷新对应 [ChapterPageItem] 的本地路径
+    ///
+    /// 通过 [ChapterPageItem.filename] 定位对应页，把 `localPath` 置为
+    /// 本地文件绝对路径，UI 刷新后该页从 [WaitingPagePlaceholder] 切换为
+    /// [Image.file] 直接渲染本地图。
+    void _onPageCompleted(
+        String photoId,
+        String filename,
+        int current,
+        int total,
+        double progress,
+    )
+    {
+        if (!mounted) return;
+        if (photoId != activePhotoId) return;
+
+        final localPath = _buildLocalPathForFilename(filename);
+        setState(() {
+            _chapterDownloadCurrent = current;
+            _chapterDownloadTotal = total;
+            _chapterDownloadProgress = progress;
+            // 更新对应 ChapterPageItem 的 localPath
+            final newPages = <ChapterPageItem>[];
+            for (final p in _chapterPages)
+            {
+                if (p.filename == filename && localPath.isNotEmpty)
+                {
+                    newPages.add(ChapterPageItem(
+                        index: p.index,
+                        localPath: localPath,
+                        filename: p.filename,
+                        scrambleId: p.scrambleId,
+                        aid: p.aid,
+                    ));
+                }
+                else
+                {
+                    newPages.add(p);
+                }
+            }
+            _chapterPages = newPages;
+        });
+        // 失效缓存让下次扫描看到新文件
+        if (localPath.isNotEmpty)
+        {
+            FileExistenceCache.invalidate(localPath);
+            FileExistenceCache.invalidate('$localPath.ok');
+        }
+    }
+
+    /// 根据服务器文件名构造本地文件路径
+    ///
+    /// JM 服务器文件名（如 "00001.jpg"）与本地保存文件名一致，
+    /// 直接拼接 [_chapterSaveDir] + [filename] 即可得到本地绝对路径。
+    String _buildLocalPathForFilename(String filename)
+    {
+        final saveDir = _chapterSaveDir;
+        if (saveDir == null || saveDir.isEmpty) return '';
+        final sep = Platform.pathSeparator;
+        return '$saveDir$sep$filename';
     }
 }

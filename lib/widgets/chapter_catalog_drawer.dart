@@ -63,7 +63,7 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
         final query = _searchQuery.toLowerCase();
         return widget.episodes.where((ep)
         {
-            return ep.name.toLowerCase().contains(query) ||
+            return ep.displayName.toLowerCase().contains(query) ||
                 ep.index.toLowerCase().contains(query);
         }).toList();
     }
@@ -272,7 +272,7 @@ class _ChapterCatalogDrawerState extends State<ChapterCatalogDrawer>
                             // 章节标题
                             Expanded(
                                 child: Text(
-                                    episode.name,
+                                    episode.displayName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(

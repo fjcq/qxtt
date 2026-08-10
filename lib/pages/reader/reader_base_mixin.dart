@@ -26,7 +26,8 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// 当前页码
   int get currentPage;
 
-  /// 设置当前页码（仅更新状态，不触发滚动）
+  /// 设置当前页码（仅更新状态，不触发滚动，不触发 setState）
+  /// UI 通过 [currentPageNotifier] 监听变化自行重建
   void setCurrentPage(int page);
 
   /// 构建阅读内容主体（loading / error / 图片列表）
@@ -70,6 +71,19 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// 焦点节点（用于键盘事件）
   final FocusNode _focusNode = FocusNode();
 
+  /// 当前页码的响应式 notifier
+  /// UI（如底部进度条、页码显示）通过 [ValueListenableBuilder] 监听它，
+  /// 页码变化时只重建这些局部组件，不触发整个 reader 重建。
+  final ValueNotifier<int> _currentPageNotifier =
+      ValueNotifier<int>(0);
+
+  /// 持久化进度节流时间戳（毫秒）
+  /// 滚动事件高频触发时，仅在距离上次持久化超过 [_kPersistThrottleMs] 时写库
+  int _lastPersistMs = 0;
+
+  /// 持久化进度节流间隔（毫秒）
+  static const int _kPersistThrottleMs = 500;
+
   /// 全局缩放比例（移动端双指缩放，影响所有图片）
   double _globalScale = 1.0;
 
@@ -111,6 +125,9 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// 焦点节点
   FocusNode get focusNode => _focusNode;
 
+  /// 当前页码 notifier（供 UI 用 ValueListenableBuilder 监听）
+  ValueNotifier<int> get currentPageNotifier => _currentPageNotifier;
+
   /// 全局缩放比例
   double get globalScale => _globalScale;
 
@@ -151,7 +168,7 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (_albumDetail == null) return '';
     for (final ep in _albumDetail!.episodes) {
       if (ep.photoId == _activePhotoId) {
-        return ep.name;
+        return ep.displayName;
       }
     }
     return '';
@@ -172,12 +189,19 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _focusNode.dispose();
+    _currentPageNotifier.dispose();
     super.dispose();
   }
 
   // ==================== 滚动与进度 ====================
 
   /// 滚动监听，根据滚动位置更新当前页码并持久化进度
+  ///
+  /// 【性能优化】
+  /// - [setCurrentPage] 不再触发 setState，只更新 [currentPageNotifier]，
+  ///   UI（如底部进度条）通过 ValueListenableBuilder 局部重建
+  /// - [persistProgress] 节流：滚动高频触发时，距离上次写库超过
+  ///   [_kPersistThrottleMs] 才真正执行，避免每帧写 SQLite
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final total = totalPages;
@@ -192,18 +216,35 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
     if (page != currentPage) {
       setCurrentPage(page);
-      persistProgress();
+      _maybePersistProgress();
     }
   }
 
+  /// 节流持久化进度
+  /// 章节切换/dispose 时调用 [persistProgress] 立即生效
+  void _maybePersistProgress() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastPersistMs < _kPersistThrottleMs) return;
+    _lastPersistMs = now;
+    persistProgress();
+  }
+
   /// 滚动到指定页
-  void scrollToPage(int page) {
+  ///
+  /// [instant] 为 true 时使用 [ScrollController.jumpTo] 无动画跳转，
+  /// 适用于进度条拖动场景，避免与下一次 onChange 的 animateTo 冲突产生抖动；
+  /// 默认 false 使用 [ScrollController.animateTo] 平滑动画，适用于翻页按钮。
+  void scrollToPage(int page, {bool instant = false}) {
     if (!_scrollController.hasClients) return;
     final total = totalPages;
     final maxScroll = _scrollController.position.maxScrollExtent;
     if (total <= 0 || maxScroll <= 0) return;
 
     final targetOffset = (page / (total - 1) * maxScroll).clamp(0.0, maxScroll);
+    if (instant) {
+      _scrollController.jumpTo(targetOffset);
+      return;
+    }
     _scrollController.animateTo(
       targetOffset,
       duration: const Duration(milliseconds: 300),

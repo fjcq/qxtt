@@ -123,7 +123,7 @@ mixin DownloadPageLibraryMixin on ConsumerState<DownloadPage>
                         }
                         else
                         {
-                            _openAlbumReader(album);
+                            _openAlbumDetail(album);
                         }
                     },
                     onLongPress: ()
@@ -227,19 +227,11 @@ mixin DownloadPageLibraryMixin on ConsumerState<DownloadPage>
         );
     }
 
-    /// 跳转到阅读器
-    void _openAlbumReader(LibraryAlbumModel album)
+    /// 跳转到本子详情页（与主页一致）
+    /// 由详情页统一展示章节列表，让用户自主选择阅读或下载某一章节
+    void _openAlbumDetail(LibraryAlbumModel album)
     {
-        if (album.downloadedEpisodes.isEmpty)
-        {
-            context.push('/album/${album.albumId}');
-            return;
-        }
-        final photoId = album.lastReadPhotoId.isNotEmpty &&
-                album.downloadedEpisodes.contains(album.lastReadPhotoId)
-            ? album.lastReadPhotoId
-            : album.downloadedEpisodes.first;
-        context.push('/reader/$photoId');
+        context.push('/album/${album.albumId}');
     }
 
     /// 切换单本选中

@@ -76,7 +76,7 @@ class EpisodeList extends StatelessWidget
                         ),
                     ),
                     title: Text(
-                        episode.name,
+                        episode.displayName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(

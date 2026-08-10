@@ -62,7 +62,11 @@ class JmImageCacheManager
     /// v4: 修正 getSegmentationNum 内部统一去后缀（与 Python 库对齐）；旧 v3 缓存全部失效
     /// v5: 新增 scramble_id <= 220980 → return 0（jm 服务端默认值 fallback）
     ///     旧 v4 缓存会错误缓存 num=14 解密结果，必须失效
-    static const int _cacheVersion = 5;
+    /// v6: 回退「整个解码流程移至后台 Isolate」的优化——后台 isolate 调用
+    ///     ui.instantiateImageCodec 在 Windows 上解出的 RGBA 像素与主 isolate 不一致，
+    ///     导致下载/在线图片解密后画面错乱。回退为「主线程解码 + compute 编码」后，
+    ///     旧 v5 缓存（可能含错位图）必须失效。
+    static const int _cacheVersion = 6;
 
     /// 缓存目录（惰性创建）
     static Future<Directory> _getDecodedDir() async

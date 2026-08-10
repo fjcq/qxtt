@@ -10,8 +10,9 @@ extension DownloadServiceStatusEmitter on DownloadService
         int total,
         double progress,
         String status,
-        String message,
-    )
+        String message, {
+        String? photoId,
+    })
     {
         final stats = _taskStats[taskId];
         final speed = stats != null ? _formatSpeed(stats.getSpeed()) : '';
@@ -23,6 +24,7 @@ extension DownloadServiceStatusEmitter on DownloadService
             progress: progress,
             status: status,
             message: message,
+            photoId: photoId,
         ));
     }
 
@@ -31,8 +33,9 @@ extension DownloadServiceStatusEmitter on DownloadService
         String taskId,
         String status,
         String message,
-        double progress,
-    )
+        double progress, {
+        String? photoId,
+    })
     {
         final stats = _taskStats[taskId];
         final speed = stats != null ? _formatSpeed(stats.getSpeed()) : '';
@@ -44,6 +47,7 @@ extension DownloadServiceStatusEmitter on DownloadService
             progress: progress,
             status: status,
             message: message,
+            photoId: photoId,
         ));
     }
 
@@ -60,6 +64,7 @@ extension DownloadServiceStatusEmitter on DownloadService
         int episodeCount = 0,
         String localCoverPath = '',
         String localPath = '',
+        String? photoId,
     })
     {
         final stats = _taskStats[taskId];
@@ -78,6 +83,37 @@ extension DownloadServiceStatusEmitter on DownloadService
             episodeCount: episodeCount,
             localCoverPath: localCoverPath,
             localPath: localPath,
+            photoId: photoId,
+        ));
+    }
+
+    /// 发送单页完成事件（统一阅读专用）
+    ///
+    /// 当 [ConcurrentImageDownloader] 完成单张图片下载并写盘后调用，
+    /// 携带 [photoId] 与 [filename] 让阅读器精确定位刷新对应页。
+    /// 不更新任务级统计（避免与 [reportProgress] 重复统计），
+    /// 仅作为"页面就绪"信号广播给当前章节的订阅者。
+    void _emitPageCompleted(
+        String taskId,
+        String photoId,
+        String filename,
+        int current,
+        int total,
+        double progress,
+    )
+    {
+        final stats = _taskStats[taskId];
+        final speed = stats != null ? _formatSpeed(stats.getSpeed()) : '';
+        _progressController.add(DownloadProgressEvent(
+            taskId: taskId,
+            current: current,
+            total: total,
+            speed: speed,
+            progress: progress,
+            status: 'pageCompleted',
+            message: '页下载完成',
+            photoId: photoId,
+            completedFilename: filename,
         ));
     }
 

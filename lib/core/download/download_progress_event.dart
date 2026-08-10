@@ -47,6 +47,20 @@ class DownloadProgressEvent
     /// 本子本地下载根目录（仅 album 任务且完成时填充）
     final String localPath;
 
+    /// 章节级事件携带的 photoId（统一阅读用）
+    ///
+    /// 单页完成、章节完成、章节创建等事件均会填充此字段，
+    /// 阅读器据此过滤出当前章节的事件并刷新对应页面。
+    /// 其他场景（如整本任务进度）可保持为 null。
+    final String? photoId;
+
+    /// 单页完成事件携带的页文件名（统一阅读用）
+    ///
+    /// 仅在"单页下载完成"事件中填充，配合 [photoId] 一起使用。
+    /// 阅读器收到后通过 `_refreshPageByFilename(filename)` 定位
+    /// 对应 [ChapterPageItem] 并把 `localPath` 置为本地图。
+    final String? completedFilename;
+
     const DownloadProgressEvent({
         required this.taskId,
         required this.current,
@@ -62,5 +76,7 @@ class DownloadProgressEvent
         this.episodeCount = 0,
         this.localCoverPath = '',
         this.localPath = '',
+        this.photoId,
+        this.completedFilename,
     });
 }

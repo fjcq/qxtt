@@ -155,7 +155,7 @@ class ReaderNotifier extends StateNotifier<ReaderState>
                 {
                     if (ep.photoId == state.photoId)
                     {
-                        chapterName = ep.name;
+                        chapterName = ep.displayName;
                         break;
                     }
                 }
@@ -220,7 +220,7 @@ class ReaderNotifier extends StateNotifier<ReaderState>
                 {
                     if (ep.photoId == photoId)
                     {
-                        chapterName = ep.name;
+                        chapterName = ep.displayName;
                         break;
                     }
                 }

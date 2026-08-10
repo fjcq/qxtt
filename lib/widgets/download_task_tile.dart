@@ -153,15 +153,21 @@ import 'download_progress.dart';
                                                         ),
                                                     ),
                                                     const SizedBox(height: 2),
-                                                    Text(
-                                                        view.isAlbumTask
-                                                            ? '整本下载'
-                                                            : '单章下载',
-                                                        style: TextStyle(
-                                                            fontSize: 11,
-                                                            color:
-                                                                context.appColors.textDisabled,
-                                                        ),
+                                                    Row(
+                                                        children: [
+                                                            Text(
+                                                                view.isAlbumTask
+                                                                    ? '整本下载'
+                                                                    : '单章下载',
+                                                                style: TextStyle(
+                                                                    fontSize: 11,
+                                                                    color:
+                                                                        context.appColors.textDisabled,
+                                                                ),
+                                                            ),
+                                                            const SizedBox(width: 6),
+                                                            _buildSourceBadge(context),
+                                                        ],
                                                     ),
                                                 ],
                                             ),
@@ -261,6 +267,45 @@ import 'download_progress.dart';
                         ),
                     ),
                     if (isEditing) _buildSelectionBadge(context),
+                ],
+            ),
+        );
+    }
+
+    /// 任务来源标记
+    ///
+    /// 【统一阅读架构】
+    /// - `manual`：用户主动下载（图标为下载）
+    /// - `reading`：阅读产生（图标为菜单书）
+    /// 其他值回退到 `manual` 样式
+    Widget _buildSourceBadge(BuildContext context)
+    {
+        final isReading = view.task.source == 'reading';
+        final label = isReading ? '阅读' : '主动';
+        final icon = isReading
+            ? Icons.menu_book_outlined
+            : Icons.download_outlined;
+        final color = isReading
+            ? context.appColors.accent
+            : context.appColors.textSecondary;
+        return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                    Icon(icon, size: 10, color: color),
+                    const SizedBox(width: 2),
+                    Text(
+                        label,
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: color,
+                        ),
+                    ),
                 ],
             ),
         );

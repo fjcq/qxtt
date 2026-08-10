@@ -83,4 +83,14 @@ class DownloadTaskModel
 
     /// 本子本地下载根目录（仅 album 任务）
     String localPath = '';
+
+    /// 任务来源（统一阅读架构）
+    ///
+    /// 取值：
+    /// - `manual`：用户主动下载（默认值，兼容旧数据）
+    /// - `reading`：阅读产生的下载任务
+    ///
+    /// 下载管理页面据此显示来源标记并支持按来源筛选；
+    /// "一键清理阅读产生任务"功能也依赖此字段。
+    String source = 'manual';
 }

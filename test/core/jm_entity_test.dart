@@ -72,4 +72,49 @@ void main()
             expect(detail.pageCount, 42);
         });
     });
+
+    group('Episode.displayName', ()
+    {
+        test('name 非空时返回原始 name', ()
+        {
+            final episode = Episode.fromJson({
+                'id': '413446',
+                'sort': '2',
+                'name': '第2話',
+            });
+
+            expect(episode.displayName, '第2話');
+        });
+
+        test('name 为空字符串时回退为 "第N话"', ()
+        {
+            final episode = Episode.fromJson({
+                'id': '400222',
+                'sort': '1',
+                'name': '',
+            });
+
+            expect(episode.displayName, '第1话');
+        });
+
+        test('name 仅含空白时回退为 "第N话"', ()
+        {
+            final episode = Episode.fromJson({
+                'id': '413447',
+                'sort': '3',
+                'name': '   ',
+            });
+
+            expect(episode.displayName, '第3话');
+        });
+
+        test('name 与 sort 均缺失时兜底为 "未命名章节"', ()
+        {
+            final episode = Episode.fromJson({
+                'id': '413448',
+            });
+
+            expect(episode.displayName, '未命名章节');
+        });
+    });
 }

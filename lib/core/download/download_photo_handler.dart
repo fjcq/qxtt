@@ -3,6 +3,97 @@ part of 'download_service.dart';
 /// 负责单章（photo）下载
 extension DownloadServicePhotoHandler on DownloadService
 {
+    /// 确保指定章节已下载（统一阅读入口）
+    ///
+    /// 【统一阅读架构】
+    /// 所有阅读入口（在线浏览 / 下载管理 / 书架）进入阅读时统一调用，
+    /// 让章节要么已下载完成，要么自动创建下载任务并在后台执行。
+    ///
+    /// 行为：
+    /// 1. 计算章节本地保存目录
+    /// 2. 检查 `.complete` 标记，命中则直接返回路径
+    /// 3. 查询已有活跃任务（pending/running/paused），命中则复用，不重复创建
+    /// 4. 否则创建新任务（`source='reading'`），fire-and-forget 启动 [downloadPhoto]
+    /// 5. 立即返回章节目录路径，调用方通过订阅 [onProgress] 感知进度
+    ///
+    /// 不阻塞调用：章节未下载时也立即返回路径，阅读器渲染时未下载页
+    /// 通过 `WaitingPagePlaceholder` 显示占位，下载完成后通过事件自动刷新。
+    ///
+    /// - [photoId] 章节 ID
+    /// - [albumId] 作品 ID
+    /// - [title] 作品标题（用于本地目录命名，为空时回退 photoId）
+    /// - [episodeIndex] 章节序号
+    /// - [episodeName] 章节名
+    ///
+    /// 返回：章节本地目录路径（已存在或新建任务的保存目录）
+    Future<String> ensureChapterDownloaded({
+        required String photoId,
+        required String albumId,
+        required String title,
+        required String episodeIndex,
+        required String episodeName,
+    }) async
+    {
+        // 1. 解析下载根目录
+        final downloadDir = _downloadDir.isEmpty
+            ? await PathHelper.getDownloadDir()
+            : _downloadDir;
+
+        // 2. 计算章节保存目录（与 downloadPhoto 完全一致）
+        final String saveDir;
+        if (title.isNotEmpty && episodeIndex.isNotEmpty)
+        {
+            final safeAlbumTitle = DownloadService._sanitizeFileName(title);
+            final safeEpisodeIndex = DownloadService._sanitizeFileName(episodeIndex);
+            saveDir = '$downloadDir${Platform.pathSeparator}$safeAlbumTitle'
+                '${Platform.pathSeparator}$safeEpisodeIndex';
+        }
+        else
+        {
+            saveDir = '$downloadDir${Platform.pathSeparator}$photoId';
+        }
+
+        // 3. 章节已完成 → 直接返回路径，不创建任务
+        if (await ChapterCompleteHelper.isChapterComplete(saveDir))
+        {
+            return saveDir;
+        }
+
+        // 4. 查询已有活跃任务（pending/running/paused），命中则复用
+        final allTasks = await _taskDao.getAllTasks();
+        const activeStatuses = {'pending', 'running', 'paused'};
+        final existing = allTasks
+            .where((t) =>
+                t.taskType == 'photo' &&
+                t.jmId == photoId &&
+                activeStatuses.contains(t.status))
+            .firstOrNull;
+        if (existing != null)
+        {
+            // 已存在活跃任务，让阅读器复用其进度，无需重复创建
+            return saveDir;
+        }
+
+        // 5. 创建新任务（source=reading），fire-and-forget 启动下载
+        final task = await createTask(
+            'photo',
+            photoId,
+            albumId: albumId,
+            albumTitle: title,
+            episodeIndex: episodeIndex,
+            episodeName: episodeName,
+            source: 'reading',
+        );
+
+        // 异步启动下载，不阻塞调用方；失败仅记录日志
+        // ignore: discarded_futures
+        downloadPhoto(task).catchError((Object e) {
+            // 静默处理：状态已由 downloadPhoto 内部写入 taskDao
+        });
+
+        return saveDir;
+    }
+
     /// 下载单个章节
     ///
     /// 单章内所有图片通过 [DownloadSemaphore] 并发下载，并发数取
@@ -23,7 +114,7 @@ extension DownloadServicePhotoHandler on DownloadService
         try
         {
             await _taskDao.updateTaskStatus(taskId, 'running', '正在获取章节详情', 0.0);
-            _emitStatus(taskId, 'running', '正在获取章节详情', 0.0);
+            _emitStatus(taskId, 'running', '正在获取章节详情', 0.0, photoId: photoId);
 
             final photoDetail = await _client.getPhotoDetail(photoId);
             final scrambleId = await _client.getScrambleId(photoId);
@@ -64,6 +155,7 @@ extension DownloadServicePhotoHandler on DownloadService
                 taskId, completed.length, totalImages,
                 totalImages > 0 ? completed.length / totalImages : 0.0,
                 'running', completed.isNotEmpty ? '续传中' : '正在下载',
+                photoId: photoId,
             );
 
             // 暂停监听
@@ -97,7 +189,7 @@ extension DownloadServicePhotoHandler on DownloadService
                 await _taskDao.updateTaskStatus(
                     taskId, 'paused', '已暂停', 0.0,
                 );
-                _emitStatus(taskId, 'paused', '已暂停', 0.0);
+                _emitStatus(taskId, 'paused', '已暂停', 0.0, photoId: photoId);
                 return;
             }
 
@@ -134,6 +226,7 @@ extension DownloadServicePhotoHandler on DownloadService
                     taskId, 'completed', '下载完成', 1.0, [photoId],
                     localCoverPath: coverPath,
                     localPath: saveDir,
+                    photoId: photoId,
                 );
             }
         }
@@ -144,14 +237,14 @@ extension DownloadServicePhotoHandler on DownloadService
                 await _taskDao.updateTaskStatus(
                     taskId, 'paused', '已暂停', 0.0,
                 );
-                _emitStatus(taskId, 'paused', '已暂停', 0.0);
+                _emitStatus(taskId, 'paused', '已暂停', 0.0, photoId: photoId);
             }
             else if (!cancelToken.isCancelled)
             {
                 await _taskDao.updateTaskStatus(
                     taskId, 'failed', '下载失败: $e', 0.0,
                 );
-                _emitStatus(taskId, 'failed', '下载失败: $e', 0.0);
+                _emitStatus(taskId, 'failed', '下载失败: $e', 0.0, photoId: photoId);
             }
         }
         finally
@@ -198,6 +291,7 @@ extension DownloadServicePhotoHandler on DownloadService
             ).then((_) => _emitProgress(
                 taskId, doneCount, totalImages, progress,
                 'running', runningMessage,
+                photoId: photoId,
             ));
         }
 
@@ -227,6 +321,12 @@ extension DownloadServicePhotoHandler on DownloadService
                     _taskStats[taskId]?.addBytes(result.bytes);
                 }
                 completed.add(pageIndex);
+                // 【统一阅读】单页完成后广播事件，阅读器订阅后可精确刷新对应页
+                final doneCount = completed.length;
+                final progress = totalImages > 0 ? doneCount / totalImages : 0.0;
+                _emitPageCompleted(
+                    taskId, photoId, filename, doneCount, totalImages, progress,
+                );
                 await reportProgress();
             }
             finally

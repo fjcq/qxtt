@@ -167,7 +167,13 @@ mixin ReaderGestureMixin<T extends ConsumerStatefulWidget>
   }
 
   /// 水平滑动开始
+  ///
+  /// 【BUG 修复】
+  /// 桌面端禁用水平滑动手势切章。桌面端鼠标垂直拖动滚动时，手抖常带有
+  /// 水平分量（>50px），若松开时水平速度 > 300 会被误识别为切章手势，
+  /// 导致意外返回上一章。桌面端切章通过左右方向键完成，移动端保留水平滑动。
   void onHorizontalDragStart(DragStartDetails details) {
+    if (isDesktop) return;
     _isHorizontalDrag = true;
     _horizontalDragStart = details.localPosition;
     _horizontalDragCurrent = details.localPosition;
@@ -175,11 +181,13 @@ mixin ReaderGestureMixin<T extends ConsumerStatefulWidget>
 
   /// 水平滑动更新
   void onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (isDesktop) return;
     _horizontalDragCurrent = details.localPosition;
   }
 
   /// 水平滑动结束
   void onHorizontalDragEnd(DragEndDetails details) {
+    if (isDesktop) return;
     if (!_isHorizontalDrag) return;
     _isHorizontalDrag = false;
 

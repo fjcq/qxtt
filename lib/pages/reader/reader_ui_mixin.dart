@@ -53,6 +53,11 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
   // ==================== 控制栏与遮罩 ====================
 
   /// 构建控制栏框架
+  ///
+  /// 【性能优化】
+  /// 顶部栏使用 episodeName（章节切换才变化），底层 Column 不依赖 currentPage
+  /// 底部栏内部使用 [ValueListenableBuilder] 监听 [currentPageNotifier]，
+  /// 页码变化时只重建底部栏局部，不触发整个 reader 重建
   Widget _buildControls(BuildContext context) {
     final total = totalPages;
     final episodeName = currentChapterName;
@@ -93,6 +98,10 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
   }
 
   /// 构建顶部控制栏
+  ///
+  /// 【性能优化】
+  /// 顶部页码显示使用 [ValueListenableBuilder] 监听 [currentPageNotifier]，
+  /// 页码变化时只重建 Text 局部，不触发整个 reader 重建
   Widget _buildTopBar(BuildContext context, String episodeName) {
     return Container(
       padding: EdgeInsets.only(
@@ -129,13 +138,18 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                Text(
-                  '${currentPage + 1} / $totalPages',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
+                ValueListenableBuilder<int>(
+                  valueListenable: currentPageNotifier,
+                  builder: (context, page, _) {
+                    return Text(
+                      '${page + 1} / $totalPages',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -152,6 +166,10 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
   }
 
   /// 构建底部控制栏
+  ///
+  /// 【性能优化】
+  /// 进度条 + 翻页按钮使用 [ValueListenableBuilder] 监听 [currentPageNotifier]，
+  /// 页码变化时只重建底部栏内部局部，不触发整个 reader 重建
   Widget _buildBottomBar(BuildContext context, int total) {
     // 章节导航是否可用
     final canNavigate =
@@ -175,7 +193,11 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
         mainAxisSize: MainAxisSize.min,
         children: [
           // 进度条
-          if (total > 0) _buildProgressBar(total),
+          if (total > 0)
+            ValueListenableBuilder<int>(
+              valueListenable: currentPageNotifier,
+              builder: (context, page, _) => _buildProgressBar(total, page),
+            ),
           const SizedBox(height: 8),
           // 章节导航提示（无法切换时）
           if (!canNavigate)
@@ -212,53 +234,56 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
                     ),
             ),
           // 按钮行
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // 上一章
-              IconButton(
-                icon: Icon(
-                  Icons.skip_previous,
-                  color: hasPrevChapter ? Colors.white : Colors.white24,
-                ),
-                onPressed: hasPrevChapter ? goToPrevChapter : null,
-                tooltip: '上一章',
-              ),
-              const SizedBox(width: 16),
-              // 上一页
-              IconButton(
-                icon: const Icon(
-                  Icons.navigate_before,
-                  color: Colors.white,
-                ),
-                onPressed: currentPage > 0
-                    ? () => setPage(currentPage - 1)
-                    : null,
-                tooltip: '上一页',
-              ),
-              const SizedBox(width: 16),
-              // 下一页
-              IconButton(
-                icon: const Icon(
-                  Icons.navigate_next,
-                  color: Colors.white,
-                ),
-                onPressed: currentPage < total - 1
-                    ? () => setPage(currentPage + 1)
-                    : null,
-                tooltip: '下一页',
-              ),
-              const SizedBox(width: 16),
-              // 下一章
-              IconButton(
-                icon: Icon(
-                  Icons.skip_next,
-                  color: hasNextChapter ? Colors.white : Colors.white24,
-                ),
-                onPressed: hasNextChapter ? goToNextChapter : null,
-                tooltip: '下一章',
-              ),
-            ],
+          ValueListenableBuilder<int>(
+            valueListenable: currentPageNotifier,
+            builder: (context, page, _) {
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 上一章
+                  IconButton(
+                    icon: Icon(
+                      Icons.skip_previous,
+                      color: hasPrevChapter ? Colors.white : Colors.white24,
+                    ),
+                    onPressed: hasPrevChapter ? goToPrevChapter : null,
+                    tooltip: '上一章',
+                  ),
+                  const SizedBox(width: 16),
+                  // 上一页
+                  IconButton(
+                    icon: const Icon(
+                      Icons.navigate_before,
+                      color: Colors.white,
+                    ),
+                    onPressed: page > 0 ? () => setPage(page - 1) : null,
+                    tooltip: '上一页',
+                  ),
+                  const SizedBox(width: 16),
+                  // 下一页
+                  IconButton(
+                    icon: const Icon(
+                      Icons.navigate_next,
+                      color: Colors.white,
+                    ),
+                    onPressed: page < total - 1
+                        ? () => setPage(page + 1)
+                        : null,
+                    tooltip: '下一页',
+                  ),
+                  const SizedBox(width: 16),
+                  // 下一章
+                  IconButton(
+                    icon: Icon(
+                      Icons.skip_next,
+                      color: hasNextChapter ? Colors.white : Colors.white24,
+                    ),
+                    onPressed: hasNextChapter ? goToNextChapter : null,
+                    tooltip: '下一章',
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -266,13 +291,20 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
   }
 
   /// 构建进度条
-  Widget _buildProgressBar(int total) {
+  ///
+  /// 【性能优化】
+  /// - [Slider.onChanged]：拖动中仅用 [scrollToPage] 的 instant 模式
+  ///   （[ScrollController.jumpTo]）无动画滚动，不调用 setState，
+  ///   滚动事件触发 [ReaderBaseMixin._onScroll] 自动同步 [currentPageNotifier]
+  /// - [Slider.onChangeEnd]：拖动结束时持久化进度（一次写库）
+  ///   避免拖动过程中每帧写 SQLite 导致的卡顿
+  Widget _buildProgressBar(int total, int page) {
     return Row(
       children: [
         SizedBox(
           width: 36,
           child: Text(
-            '${currentPage + 1}',
+            '${page + 1}',
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white70,
@@ -296,10 +328,22 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
               ),
             ),
             child: Slider(
-              value: total > 1 ? currentPage / (total - 1) : 0.0,
-              onChanged: (value) {
-                final page = (value * (total - 1)).round();
-                setPage(page);
+              value: total > 1 ? page / (total - 1) : 0.0,
+              onChanged: total > 1
+                  ? (value) {
+                      final target =
+                          (value * (total - 1)).round().clamp(0, total - 1);
+                      // 拖动中：仅 jumpTo 滚动，不写库、不 setState
+                      // _onScroll 会同步 currentPageNotifier，UI 自动更新
+                      scrollToPage(target, instant: true);
+                    }
+                  : null,
+              onChangeEnd: (value) {
+                final target =
+                    (value * (total - 1)).round().clamp(0, total - 1);
+                // 拖动结束：同步状态 + 立即持久化进度
+                setCurrentPage(target);
+                persistProgress();
               },
             ),
           ),
@@ -340,6 +384,9 @@ mixin ReaderUIMixin<T extends ConsumerStatefulWidget>
   }
 
   /// 跳转到指定页并滚动
+  ///
+  /// 【性能优化】
+  /// 用于翻页按钮，使用动画滚动（[scrollToPage] 默认 animateTo）
   void setPage(int page) {
     if (page < 0 || page >= totalPages) return;
     setCurrentPage(page);

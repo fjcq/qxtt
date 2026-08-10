@@ -5,11 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/download/download_service.dart';
 import '../core/jm/jm_entity.dart';
-import '../core/reader/reader_download_engine.dart';
 import '../providers/browse_history_provider.dart';
-import '../providers/config_provider.dart';
-import '../providers/reader_providers.dart';
+import '../providers/download_provider.dart';
 import '../providers/search_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/path_helper.dart';
@@ -18,13 +17,12 @@ import 'reader/reader_base_mixin.dart';
 import 'reader/reader_gesture_mixin.dart';
 import 'reader/reader_ui_mixin.dart';
 
-/// 在线阅读器页
+/// 在线阅读器页（统一阅读架构）
 /// 流程:
-/// 1. 获取 photo_detail + scramble_id
-/// 2. 加载时优先尝试本地文件（如果整本已下载）
-/// 3. 否则在线下载→解密→内存渲染
-/// 4. 预加载当前页前后各 2 张
-/// 5. 退出时保存阅读进度到 browse_history
+/// 1. 获取 photo_detail + scramble_id + album_detail
+/// 2. 调用 [DownloadService.ensureChapterDownloaded] 创建/复用章节下载任务
+/// 3. 渲染时优先读本地文件，未下载页通过 [OnlineImageViewer] 占位并订阅下载事件
+/// 4. 退出时保存阅读进度到 browse_history
 ///
 /// 交互优化:
 /// - PC端鼠标拖动+惯性滑动
@@ -54,9 +52,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
   /// 章节详情
   PhotoDetail? _photoDetail;
 
-  /// scramble_id
-  int _scrambleId = 0;
-
   /// 当前页
   int _currentPage = 0;
 
@@ -65,6 +60,9 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
 
   /// 本子下载根目录（探测一次）
   String? _downloadRoot;
+
+  /// 当前章节本地保存目录（由 ensureChapterDownloaded 返回）
+  String? _chapterSaveDir;
 
 
 
@@ -77,13 +75,17 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
   @override
   int get currentPage => _currentPage;
 
+  /// 更新当前页码
+  ///
+  /// 【性能优化】
+  /// 不再触发 setState，仅同步 [_currentPage] 与 [currentPageNotifier]。
+  /// UI（如底部进度条、页码显示）通过 [ValueListenableBuilder] 监听
+  /// [currentPageNotifier] 局部重建，避免整个 reader 因页码变化而重建
   @override
   void setCurrentPage(int page) {
-    setState(() => _currentPage = page);
-    // 页面稳定后预加载当前页前后范围
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _preloadCurrentRange();
-    });
+    if (page == _currentPage) return;
+    _currentPage = page;
+    currentPageNotifier.value = page;
   }
 
   @override
@@ -139,7 +141,7 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
 
     try {
       final detail = await client.getPhotoDetail(activePhotoId);
-      final scrambleId = await client.getScrambleId(activePhotoId);
+      await client.getScrambleId(activePhotoId);
 
       AlbumDetail? albumDetail;
       try {
@@ -150,16 +152,17 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
       }
 
       if (!mounted) return;
+      final initialPage = startPage.clamp(
+        0,
+        detail.pageArr.isEmpty ? 0 : detail.pageArr.length - 1,
+      );
       setState(() {
         _photoDetail = detail;
         this.albumDetail = albumDetail;
-        _scrambleId = scrambleId;
-        _currentPage = startPage.clamp(
-          0,
-          detail.pageArr.isEmpty ? 0 : detail.pageArr.length - 1,
-        );
+        _currentPage = initialPage;
         _initialLoading = false;
       });
+      currentPageNotifier.value = initialPage;
 
       if (startPage > 0 && scrollController.hasClients) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -167,9 +170,10 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
         });
       }
 
+      // 【统一阅读架构】确保章节已下载，未下载页通过占位组件等待自动刷新
+      await _ensureChapterDownloaded(activePhotoId);
+
       _preloadAdjacentChapters();
-      _preloadCurrentRange();
-      _startSmartDownload();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -179,27 +183,30 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     }
   }
 
-  /// 启动当前章节的智能下载（在线阅读自动保存到正式下载目录）
-  Future<void> _startSmartDownload() async
+  /// 确保当前章节已下载（统一阅读入口）
+  ///
+  /// 调用 [DownloadService.ensureChapterDownloaded]，拿到章节本地保存目录。
+  /// 已完成 → 直接读本地；未完成 → 后台启动下载任务，单页完成事件由
+  /// [OnlineImageViewer] 自行订阅刷新。
+  Future<void> _ensureChapterDownloaded(String photoId) async
   {
     try
     {
-      final service = ref.read(smartDownloadServiceProvider);
-      final episode = albumDetail != null
-          ? findEpisodeInAlbum(activePhotoId)
-          : null;
-
-      unawaited(service.startSmartDownload(
-        photoId: activePhotoId,
-        albumTitle: albumDetail?.name ?? '',
+      final downloadService = ref.read(downloadServiceProvider);
+      final album = albumDetail;
+      final episode = album != null ? findEpisodeInAlbum(photoId) : null;
+      _chapterSaveDir = await downloadService.ensureChapterDownloaded(
+        photoId: photoId,
+        albumId: album?.albumId ?? photoId,
+        title: album?.name ?? '',
         episodeIndex: episode?.index ?? '',
         episodeName: episode?.name ?? '',
-        albumId: albumDetail?.albumId ?? activePhotoId,
-      ));
+      );
+      if (mounted) setState(() {});
     }
     catch (e)
     {
-      debugPrint('[online_reader] 智能下载启动失败: $e');
+      debugPrint('[online_reader] ensureChapterDownloaded 失败: $e');
     }
   }
 
@@ -209,16 +216,17 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
       chapterLoading = true;
       error = null;
       _photoDetail = null;
-      _scrambleId = 0;
       _currentPage = 0;
+      _chapterSaveDir = null;
       activePhotoId = photoId;
     });
+    currentPageNotifier.value = 0;
 
     final client = ref.read(jmClientProvider);
 
     try {
       final detail = await client.getPhotoDetail(photoId);
-      final scrambleId = await client.getScrambleId(photoId);
+      await client.getScrambleId(photoId);
 
       if (albumDetail == null) {
         try {
@@ -232,7 +240,6 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
       if (!mounted) return;
       setState(() {
         _photoDetail = detail;
-        _scrambleId = scrambleId;
         chapterLoading = false;
       });
 
@@ -241,39 +248,16 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
       }
       _persistProgressForChapter(photoId, 0);
 
+      // 【统一阅读架构】章节切换同样触发 ensureChapterDownloaded
+      await _ensureChapterDownloaded(photoId);
+
       _preloadAdjacentChapters();
-      _preloadCurrentRange();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         error = e.toString();
         chapterLoading = false;
       });
-    }
-  }
-
-  /// 预加载当前页前后范围内的图片（低优先级，不等待结果）
-  Future<void> _preloadCurrentRange() async {
-    if (_photoDetail == null) return;
-
-    final pages = _photoDetail!.pageArr;
-    if (pages.isEmpty) return;
-
-    final loader = ref.read(readerImageLoaderProvider);
-    final config = ref.read(configProvider).config;
-    final range = config.preloadPageCount;
-    final start = (_currentPage - range).clamp(0, pages.length - 1).toInt();
-    final end = (_currentPage + range).clamp(0, pages.length - 1).toInt();
-    final aid = int.tryParse(activePhotoId) ?? 0;
-
-    for (var i = start; i <= end; i++) {
-      if (i == _currentPage) continue;
-      loader.preload(
-        photoId: activePhotoId,
-        filename: pages[i],
-        scrambleId: _scrambleId,
-        aid: aid,
-      );
     }
   }
 
@@ -312,33 +296,23 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     }
   }
 
-  /// 计算本地文件路径（如果已下载整本）
+  /// 计算本地文件路径
   ///
-  /// 【性能优化】
-  /// - 仅构造两个明确路径（整本目录 / 单章直传目录），不做同步 IO 检查
+  /// 【统一阅读架构】
+  /// - 优先使用 [_chapterSaveDir]（由 ensureChapterDownloaded 返回）
+  /// - 兜底回退到下载根目录 + photoId 单章直传目录
   /// - 实际存在性由 [OnlineImageViewer] 内部走 [FileExistenceCache] 异步检查
-  /// - 删除原先的 `root.listSync(recursive: true)` 递归全盘扫描，
-  ///   该操作在书架有几十个本子时可能耗时数百毫秒到数秒
-  String? _findLocalPath(int pageIndex) {
-    if (_photoDetail == null || _downloadRoot == null) return null;
+  String _buildLocalPath(int pageIndex) {
     final sep = Platform.pathSeparator;
     final seq = (pageIndex + 1).toString().padLeft(5, '0');
-
-    // 1. 整本下载目录优先：{downloadRoot}/{albumTitle}/{episodeIndex}/{seq}.jpg
-    if (albumDetail != null) {
-      final episode = findEpisodeInAlbum(activePhotoId);
-      if (episode != null) {
-        return PathHelper.getPagePath(
-          _downloadRoot!,
-          albumDetail!.name,
-          episode.index,
-          pageIndex,
-        );
-      }
+    final saveDir = _chapterSaveDir;
+    if (saveDir != null && saveDir.isNotEmpty) {
+      return '$saveDir$sep$seq.jpg';
     }
-
-    // 2. 单章直传目录兜底：{downloadRoot}/{photoId}/{seq}.jpg
-    return '$_downloadRoot$sep$activePhotoId$sep$seq.jpg';
+    // 兜底：单章直传目录
+    final root = _downloadRoot;
+    if (root == null) return '';
+    return '$root$sep$activePhotoId$sep$seq.jpg';
   }
 
   /// 重试获取本子详情（用于章节导航）
@@ -411,30 +385,16 @@ class _OnlineReaderPageState extends ConsumerState<OnlineReaderPage>
     return _buildVerticalScroll(pages);
   }
 
-  /// 构造单图 Widget（全局缩放通过调整图片宽度实现）
+  /// 构造单图 Widget（统一阅读架构：本地优先，未下载页占位）
   Widget _buildImageForIndex(int index, List<String> pages) {
-    final loader = ref.read(readerImageLoaderProvider);
-    final config = ref.read(configProvider).config;
-    final aid = int.tryParse(activePhotoId) ?? 0;
-    final localPath = _findLocalPath(index);
-
-    // 根据与当前页的距离分配下载优先级
-    final distance = (index - _currentPage).abs();
-    final priority = distance == 0
-        ? DownloadPriority.immediate
-        : distance <= config.preloadPageCount
-            ? DownloadPriority.preload
-            : DownloadPriority.background;
-
+    final localPath = _buildLocalPath(index);
     return OnlineImageViewer(
       key: ValueKey('${activePhotoId}_$index'),
       photoId: activePhotoId,
       filename: pages[index],
-      scrambleId: _scrambleId,
-      aid: aid,
-      loader: loader,
       localFilePath: localPath,
-      priority: priority,
+      pageIndex: index,
+      totalPages: pages.length,
       scale: globalScale,
     );
   }

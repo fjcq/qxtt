@@ -82,6 +82,10 @@ class DownloadService
     }
 
     /// 创建下载任务
+    ///
+    /// [source] 任务来源：
+    ///   - `manual`（默认）：用户主动下载
+    ///   - `reading`：阅读产生的下载任务
     Future<DownloadTaskModel> createTask(
         String type,
         String jmId, {
@@ -90,6 +94,7 @@ class DownloadService
         String? albumTitle,
         String? episodeIndex,
         String? episodeName,
+        String source = 'manual',
     }) async
     {
         const uuid = Uuid();
@@ -108,7 +113,8 @@ class DownloadService
             ..progress = 0.0
             ..currentImage = 0
             ..totalImages = 0
-            ..title = title;
+            ..title = title
+            ..source = source;
 
         await _taskDao.createTask(task);
         return task;

@@ -283,6 +283,20 @@ class Episode
             name: json['name']?.toString() ?? '',
         );
     }
+
+    /// 章节显示名称
+    ///
+    /// JM API 的 series 字段中, 许多章节没有独立标题 (name 为空字符串)。
+    /// 此时回退为 "第N话" 格式, 与 Python jmcomic 库 JmPhotoDetail.indextitle
+    /// (f'第{album_index}話 {name}') 及 CLI 输出 (f'第{pindex}話  {pname}') 行为一致,
+    /// 避免 UI 章节列表/阅读器顶部栏出现空白标题。
+    /// 当 index 也缺失时, 兜底为 "未命名章节"。
+    String get displayName
+    {
+        if (name.trim().isNotEmpty) return name;
+        if (index.trim().isNotEmpty) return '第$index话';
+        return '未命名章节';
+    }
 }
 
 /// 章节详情
