@@ -1,6 +1,6 @@
 name: jmcomic_mobile
 description: JMComic 移动端漫画下载与阅读工具
-version: 1.0.3+4
+version: 1.0.4+5
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
