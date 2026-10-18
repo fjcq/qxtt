@@ -9,22 +9,22 @@
 /// ```
 /// 未传 --dart-define 时回退到 pubspec.yaml 中声明的默认版本。
 class AppVersion {
-    /// 显示版本号（如 "1.0.2+3"），构建时通过 --dart-define 覆盖
+    /// 显示版本号（如 "1.0.5+9"），构建时通过 --dart-define 覆盖
     static const String label = String.fromEnvironment(
         'APP_VERSION_LABEL',
-        defaultValue: '1.0.2+3',
+        defaultValue: '1.0.5+9',
     );
 
-    /// 纯版本名（如 "1.0.2"）
+    /// 纯版本名（如 "1.0.5"）
     static const String version = String.fromEnvironment(
         'APP_VERSION',
-        defaultValue: '1.0.2',
+        defaultValue: '1.0.5',
     );
 
-    /// 构建号（如 "3"）
+    /// 构建号（如 "9"）
     static const String build = String.fromEnvironment(
         'APP_BUILD',
-        defaultValue: '3',
+        defaultValue: '9',
     );
 
     /// 完整显示文本（version+build），如 "1.0.1+2"

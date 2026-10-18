@@ -73,6 +73,52 @@ void main()
         });
     });
 
+    group('FavoriteResult.fromJson', ()
+    {
+        test('total 为字符串时应容错解析（对齐接口实际返回 "87"）', ()
+        {
+            final json = <String, dynamic>{
+                'list': [
+                    {'id': '363859', 'name': '测试本子'},
+                ],
+                'total': '87',
+                'count': 20,
+            };
+
+            final result = FavoriteResult.fromJson(json);
+
+            expect(result.total, 87);
+            expect(result.results.length, 1);
+            expect(result.results.first.id, '363859');
+        });
+
+        test('total 为数字时正常解析，缺失时兜底为 0', ()
+        {
+            expect(FavoriteResult.fromJson({'list': [], 'total': 5}).total, 5);
+            expect(FavoriteResult.fromJson({'list': []}).total, 0);
+        });
+    });
+
+    group('SearchResult.fromJson', ()
+    {
+        test('total/page_count 为字符串时应容错解析', ()
+        {
+            final json = <String, dynamic>{
+                'content': [
+                    {'id': '400222', 'name': '搜索结果'},
+                ],
+                'total': '120',
+                'page_count': '6',
+            };
+
+            final result = SearchResult.fromJson(json);
+
+            expect(result.total, 120);
+            expect(result.pageCount, 6);
+            expect(result.results.length, 1);
+        });
+    });
+
     group('Episode.displayName', ()
     {
         test('name 非空时返回原始 name', ()

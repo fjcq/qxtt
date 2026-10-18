@@ -69,10 +69,19 @@ class AuthNotifier extends StateNotifier<AuthState>
 {
     final JmClient _client;
 
+    /// 会话恢复任务（构造时启动，幂等复用同一 Future）
+    late final Future<void> _restoreFuture;
+
     AuthNotifier(this._client) : super(const AuthState())
     {
-        _restore();
+        _restoreFuture = _restore();
     }
+
+    /// 确保会话恢复已完成（幂等）
+    ///
+    /// 供收藏等登录敏感操作在判断登录态前调用，
+    /// 避免 Provider 刚创建、恢复尚未完成时误判为未登录。
+    Future<void> ensureRestored() => _restoreFuture;
 
     /// 从持久化恢复登录会话（fire-and-forget）
     Future<void> _restore() async

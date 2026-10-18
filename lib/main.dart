@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
 import 'core/common/app_logger.dart';
+import 'providers/auth_provider.dart';
 import 'utils/library_storage.dart';
 
 /// 应用入口
@@ -26,9 +27,16 @@ void main()
     // fire-and-forget，不阻塞应用启动
     unawaited(_migrateOkToComplete());
 
+    // 使用显式 ProviderContainer 以便启动时主动初始化部分 Provider：
+    // authProvider 是懒加载的，若只在设置页/收藏页被 watch，
+    // 启动后直接进详情页收藏会误判为未登录，故在此触发会话恢复
+    final container = ProviderContainer();
+    container.read(authProvider);
+
     runApp(
-        const ProviderScope(
-            child: App(),
+        UncontrolledProviderScope(
+            container: container,
+            child: const App(),
         ),
     );
 }

@@ -24,8 +24,9 @@ class SearchResult
             .map((e) => SearchItem.fromJson(e as Map<String, dynamic>))
             .toList();
         return SearchResult(
-            total: json['total'] as int? ?? 0,
-            pageCount: json['page_count'] as int? ?? 0,
+            // 接口的 total/page_count 可能返回字符串（如 "87"），用 num.tryParse 容错而非强转
+            total: num.tryParse('${json['total']}')?.toInt() ?? 0,
+            pageCount: num.tryParse('${json['page_count']}')?.toInt() ?? 0,
             results: list,
         );
     }
@@ -417,8 +418,9 @@ class LoginResult
             uid: uid,
             avs: avs,
             photo: json['photo']?.toString() ?? '',
-            albumFavorites: (json['album_favorites'] as num?)?.toInt() ?? 0,
-            albumFavoritesMax: (json['album_favorites_max'] as num?)?.toInt() ?? 0,
+            // album_favorites 可能返回字符串，用 num.tryParse 容错而非强转
+            albumFavorites: num.tryParse('${json['album_favorites']}')?.toInt() ?? 0,
+            albumFavoritesMax: num.tryParse('${json['album_favorites_max']}')?.toInt() ?? 0,
         );
     }
 }
@@ -446,7 +448,8 @@ class FavoriteResult
             .map((e) => SearchItem.fromJson(e as Map<String, dynamic>))
             .toList();
         return FavoriteResult(
-            total: (json['total'] as num?)?.toInt() ?? 0,
+            // 收藏接口的 total 返回字符串（如 "87"，对齐 Python parse_api_to_favorite_page），容错解析
+            total: num.tryParse('${json['total']}')?.toInt() ?? 0,
             results: list,
         );
     }

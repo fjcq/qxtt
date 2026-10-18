@@ -438,7 +438,12 @@ class _FavoriteButtonState extends ConsumerState<_FavoriteButton>
     {
         if (_busy) return;
 
-        // 未登录引导
+        // 未登录引导：先确保启动时的会话恢复已完成（幂等），再判断登录态
+        if (!ref.read(authProvider).loggedIn)
+        {
+            await ref.read(authProvider.notifier).ensureRestored();
+        }
+        if (!mounted) return;
         if (!ref.read(authProvider).loggedIn)
         {
             ScaffoldMessenger.of(context).showSnackBar(
