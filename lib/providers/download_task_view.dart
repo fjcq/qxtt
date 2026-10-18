@@ -1,5 +1,58 @@
 import '../data/models/download_task_model.dart';
 
+/// 下载任务模型的状态扩展（供详情页直接对任务模型做状态判断）
+extension DownloadTaskStatusX on DownloadTaskModel
+{
+    /// 是否处于活动状态（运行中或等待中）
+    bool get isActive => status == 'running' || status == 'pending';
+
+    /// 是否已暂停
+    bool get isPaused => status == 'paused';
+
+    /// 是否已终结（完成/失败/取消）——终结后 UI 恢复常规入口
+    bool get isFinal =>
+        status == 'completed' || status == 'failed' || status == 'cancelled';
+}
+
+/// 取任务列表中第一个整本（album）任务
+///
+/// 用于详情页确定"当前本子的整本下载任务"；不存在时返回 null
+DownloadTaskModel? firstAlbumTask(List<DownloadTaskModel> tasks)
+{
+    for (final t in tasks)
+    {
+        if (t.taskType == 'album') return t;
+    }
+    return null;
+}
+
+/// 合并任务列表的章节级进度映射
+///
+/// 合并规则：整本（album）任务的章节进度优先；
+/// 单章（photo）任务的进度仅补充整本映射未覆盖的章节
+/// （对应"先下载了某单章、又发起了整本下载"的并存场景）
+Map<String, ChapterProgress> mergeChapterProgress(List<DownloadTaskModel> tasks)
+{
+    final merged = <String, ChapterProgress>{};
+    // 先取整本任务的映射
+    for (final t in tasks)
+    {
+        if (t.taskType == 'album' && t.chapterProgress.isNotEmpty)
+        {
+            merged.addAll(t.chapterProgress);
+            break;
+        }
+    }
+    // 单章任务补充未覆盖的章节
+    for (final t in tasks)
+    {
+        if (t.taskType != 'photo') continue;
+        if (merged.containsKey(t.jmId)) continue;
+        merged.addAll(t.chapterProgress);
+    }
+    return merged;
+}
+
 /// 下载任务状态分组
 /// 已完成（completed）任务在 2 秒后自动从列表中移除，
 /// 因此下载 Tab 上只展示 active、paused、failed 三种分组

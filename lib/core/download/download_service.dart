@@ -16,6 +16,7 @@ import 'concurrent_image_downloader.dart';
 part 'download_progress_event.dart';
 part 'download_status_emitter.dart';
 part 'download_album_handler.dart';
+part 'download_album_cover.dart';
 part 'download_photo_handler.dart';
 
 /// 下载服务 - 管理并发下载任务
@@ -25,9 +26,10 @@ part 'download_photo_handler.dart';
 ///   - [_AlbumDownloadHandler]：整本漫画下载
 ///   - [_PhotoDownloadHandler]：单章漫画下载
 ///
-/// 单个任务内部采用信号量并发下载所有图片（章节内与章节间不区分，
-/// 整本漫画的 N 张图一起抢 [_imageThreadCount] 个许可），与
-/// [SmartDownloadService] 共享 [concurrent_image_downloader] 中的并发原语。
+/// 单个任务内部采用"章节串行 + 章节内图片并发"策略：整本按章节顺序逐章下载，
+/// 单章内的所有图片一起抢 [_imageThreadCount] 个许可并发下载，前面的章节
+/// 先完成以便用户边下边读，与 [SmartDownloadService] 共享
+/// [concurrent_image_downloader] 中的并发原语。
 ///
 /// 暂停/继续：
 ///   - [pauseTask] 取消正在进行的 HTTP 请求，保留已下载的部分文件，

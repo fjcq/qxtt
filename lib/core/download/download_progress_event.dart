@@ -61,6 +61,13 @@ class DownloadProgressEvent
     /// 对应 [ChapterPageItem] 并把 `localPath` 置为本地图。
     final String? completedFilename;
 
+    /// 章节级进度映射（photoId → 进度）
+    ///
+    /// - album 任务：每次进度事件携带所有章节的最新进度
+    /// - photo 任务：仅携带该任务对应的单章
+    /// 详情页据此渲染每章节的独立进度条；可保持为空（旧事件兼容）
+    final Map<String, ChapterProgress> chapterProgress;
+
     const DownloadProgressEvent({
         required this.taskId,
         required this.current,
@@ -78,5 +85,6 @@ class DownloadProgressEvent
         this.localPath = '',
         this.photoId,
         this.completedFilename,
+        this.chapterProgress = const {},
     });
 }

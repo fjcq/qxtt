@@ -14,16 +14,22 @@ import 'browse_history_provider.dart';
 import 'config_provider.dart';
 
 /// JmClient Provider
-/// 监听 configProvider 的代理配置，配置变更时自动重建客户端
+/// 仅监听影响客户端构造的代理特征值（useProxy + proxyUrl），
+/// 避免 ConfigState 其他字段变化（如主题、缓存大小、isLoading 翻转）触发
+/// 客户端及所有下游 Provider（搜索/分类/详情）无意义重建导致页面数据丢失
 final jmClientProvider = Provider<JmClient>((ref)
 {
-    final config = ref.watch(configProvider).config;
-    final proxyUrl = config.useProxy && config.proxyUrl.isNotEmpty
-        ? config.proxyUrl
-        : null;
+    // 代理特征值：启用代理时为 proxyUrl，未启用时为空串
+    final proxySig = ref.watch(configProvider.select((s)
+    {
+        final c = s.config;
+        return c.useProxy && c.proxyUrl.isNotEmpty ? c.proxyUrl : '';
+    }));
+    final proxyUrl = proxySig.isEmpty ? null : proxySig;
+    final useProxy = proxySig.isNotEmpty;
     final client = JmClient(
         proxyUrl: proxyUrl,
-        useProxy: config.useProxy,
+        useProxy: useProxy,
     );
     // 同步重置图片缓存管理器（让它下次访问时使用新代理 + 新域名列表）
     // imageDomainProvider 用闭包延迟获取 client.imageDomainList，
@@ -377,107 +383,3 @@ final albumDetailProvider = StateNotifierProvider.family<AlbumDetailNotifier, Al
     return AlbumDetailNotifier(client, historyDao);
 });
 
-/// 分类浏览状态
-class CategoryState
-{
-    final List<SearchItem> results;
-    final bool isLoading;
-    final String? error;
-    final int currentPage;
-    final String category;
-    final String time;
-
-    const CategoryState({
-        this.results = const [],
-        this.isLoading = false,
-        this.error,
-        this.currentPage = 1,
-        this.category = '0',
-        this.time = 'a',
-    });
-
-    CategoryState copyWith({
-        List<SearchItem>? results,
-        bool? isLoading,
-        String? error,
-        int? currentPage,
-        String? category,
-        String? time,
-    })
-    {
-        return CategoryState(
-            results: results ?? this.results,
-            isLoading: isLoading ?? this.isLoading,
-            error: error,
-            currentPage: currentPage ?? this.currentPage,
-            category: category ?? this.category,
-            time: time ?? this.time,
-        );
-    }
-}
-
-/// 分类浏览 Provider
-class CategoryNotifier extends StateNotifier<CategoryState>
-{
-    final JmClient? _client;
-
-    CategoryNotifier(this._client) : super(const CategoryState());
-
-    /// 加载分类
-    Future<void> loadCategory({
-        String category = '0',
-        String time = 'a',
-        String orderBy = 'mr',
-        int page = 1,
-    }) async
-    {
-        if (_client == null)
-        {
-            state = state.copyWith(isLoading: false);
-            return;
-        }
-
-        state = state.copyWith(isLoading: true, error: null);
-
-        try
-        {
-            final result = await _client.categoriesFilter(
-                page: page,
-                category: category,
-                orderBy: orderBy,
-                time: time,
-            );
-            state = state.copyWith(
-                results: page == 1
-                    ? result.results
-                    : [...state.results, ...result.results],
-                isLoading: false,
-                currentPage: page,
-                category: category,
-                time: time,
-            );
-        }
-        catch (e)
-        {
-            state = state.copyWith(isLoading: false, error: e.toString());
-        }
-    }
-
-    /// 加载更多
-    Future<void> loadMore() async
-    {
-        if (state.isLoading) return;
-        await loadCategory(
-            category: state.category,
-            time: state.time,
-            page: state.currentPage + 1,
-        );
-    }
-}
-
-/// 分类浏览 Provider 实例
-final categoryProvider = StateNotifierProvider<CategoryNotifier, CategoryState>((ref)
-{
-    final client = ref.watch(jmClientProvider);
-    return CategoryNotifier(client);
-});

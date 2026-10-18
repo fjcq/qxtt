@@ -110,6 +110,10 @@ extension DownloadServicePhotoHandler on DownloadService
         _cancelTokens[taskId] = cancelToken;
         _taskStats[taskId] = _DownloadStats();
         var wasPaused = false;
+        // 已完成的页索引集合（含续传已有），供暂停/失败/完成事件组装章节级进度
+        var donePages = <int>{};
+        // 章节总页数（详情获取成功后填充；失败发生在获取前时保持 0）
+        var totalImages = 0;
 
         try
         {
@@ -124,7 +128,7 @@ extension DownloadServicePhotoHandler on DownloadService
 
             if (cancelToken.isCancelled) return;
 
-            final totalImages = photoDetail.pageArr.length;
+            totalImages = photoDetail.pageArr.length;
 
             final downloadDir = _downloadDir.isEmpty
                 ? await PathHelper.getDownloadDir()
@@ -159,6 +163,12 @@ extension DownloadServicePhotoHandler on DownloadService
                 totalImages > 0 ? completed.length / totalImages : 0.0,
                 'running', completed.isNotEmpty ? '续传中' : '正在下载',
                 photoId: photoId,
+                chapterProgress: {
+                    photoId: ChapterProgress(
+                        completed: completed.length,
+                        total: totalImages,
+                    ),
+                },
             );
 
             // 暂停监听
@@ -174,7 +184,7 @@ extension DownloadServicePhotoHandler on DownloadService
                 }
             }
 
-            await _runConcurrentImageDownload(
+            donePages = await _runConcurrentImageDownload(
                 taskId: taskId,
                 photoId: photoId,
                 pageArr: photoDetail.pageArr,
@@ -192,7 +202,16 @@ extension DownloadServicePhotoHandler on DownloadService
                 await _taskDao.updateTaskStatus(
                     taskId, 'paused', '已暂停', 0.0,
                 );
-                _emitStatus(taskId, 'paused', '已暂停', 0.0, photoId: photoId);
+                _emitStatus(
+                    taskId, 'paused', '已暂停', 0.0,
+                    photoId: photoId,
+                    chapterProgress: {
+                        photoId: ChapterProgress(
+                            completed: donePages.length,
+                            total: totalImages,
+                        ),
+                    },
+                );
                 return;
             }
 
@@ -230,6 +249,12 @@ extension DownloadServicePhotoHandler on DownloadService
                     localCoverPath: coverPath,
                     localPath: saveDir,
                     photoId: photoId,
+                    chapterProgress: {
+                        photoId: ChapterProgress(
+                            completed: donePages.length,
+                            total: totalImages,
+                        ),
+                    },
                 );
             }
         }
@@ -240,14 +265,32 @@ extension DownloadServicePhotoHandler on DownloadService
                 await _taskDao.updateTaskStatus(
                     taskId, 'paused', '已暂停', 0.0,
                 );
-                _emitStatus(taskId, 'paused', '已暂停', 0.0, photoId: photoId);
+                _emitStatus(
+                    taskId, 'paused', '已暂停', 0.0,
+                    photoId: photoId,
+                    chapterProgress: {
+                        photoId: ChapterProgress(
+                            completed: donePages.length,
+                            total: totalImages,
+                        ),
+                    },
+                );
             }
             else if (!cancelToken.isCancelled)
             {
                 await _taskDao.updateTaskStatus(
                     taskId, 'failed', '下载失败: $e', 0.0,
                 );
-                _emitStatus(taskId, 'failed', '下载失败: $e', 0.0, photoId: photoId);
+                _emitStatus(
+                    taskId, 'failed', '下载失败: $e', 0.0,
+                    photoId: photoId,
+                    chapterProgress: {
+                        photoId: ChapterProgress(
+                            completed: donePages.length,
+                            total: totalImages,
+                        ),
+                    },
+                );
             }
         }
         finally
@@ -265,7 +308,10 @@ extension DownloadServicePhotoHandler on DownloadService
     ///
     /// [preCompleted] 为续传时已存在的页索引集合，会被预填到 [completed]。
     /// [onPauseCheck] 在每张图下载前调用，用于检查是否需要触发 cancel。
-    Future<void> _runConcurrentImageDownload({
+    ///
+    /// 返回：已完成（含续传已有）的页索引集合，供调用方在
+    /// 暂停/失败/完成事件中组装章节级进度
+    Future<Set<int>> _runConcurrentImageDownload({
         required String taskId,
         required String photoId,
         required List<String> pageArr,
@@ -295,6 +341,12 @@ extension DownloadServicePhotoHandler on DownloadService
                 taskId, doneCount, totalImages, progress,
                 'running', runningMessage,
                 photoId: photoId,
+                chapterProgress: {
+                    photoId: ChapterProgress(
+                        completed: doneCount,
+                        total: totalImages,
+                    ),
+                },
             ));
         }
 
@@ -348,6 +400,7 @@ extension DownloadServicePhotoHandler on DownloadService
 
         // 等待所有任务结束；被取消时让已开始的自然结束即可
         await Future.wait(futures);
+        return completed;
     }
 
     /// 单图是否已存在且有效（异步，避免阻塞事件循环）

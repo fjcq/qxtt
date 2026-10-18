@@ -7,8 +7,10 @@ extension DownloadServiceAlbumHandler on DownloadService
     ///
     /// 流程：
     /// 1. 拉取本子详情与所有章节的 photoDetail
-    /// 2. **全任务并发**：所有章节的所有图片一起抢 [_imageThreadCount] 个许可，
-    ///    章节之间不再串行。取消时停止派发新任务，已开始的会自然结束。
+    /// 2. **章节串行 + 章节内图片并发**：按章节顺序逐章下载，单章内的所有图片
+    ///    一起抢 [_imageThreadCount] 个许可并发下载。前面的章节先完成，
+    ///    用户可边下边读；下载速度不受影响（单章即可吃满并发上限）。
+    ///    取消时停止派发后续章节，已开始的图片会自然结束。
     /// 3. 全部完成后回写本子元数据与封面。
     ///
     /// 断点续传：若任务是从 `paused` 状态恢复的，会先扫描本地已有图片数，
@@ -24,6 +26,11 @@ extension DownloadServiceAlbumHandler on DownloadService
         final partialDownloadedPhotoIds = <String>{};
         // 本次运行是否因为暂停而中止
         var wasPaused = false;
+        // 本子详情引用：提升到 try 外供 catch 块组装章节进度（获取失败时为 null）
+        AlbumDetail? albumDetailRef;
+        // 章节详情映射与已完成图片集合：提升到 try 外供 catch 块使用
+        final detailByPhotoId = <String, PhotoDetail>{};
+        final completedImages = <_AlbumImageKey>{};
 
         try
         {
@@ -31,11 +38,12 @@ extension DownloadServiceAlbumHandler on DownloadService
             _emitStatus(taskId, 'running', '正在获取详情', 0.0);
 
             final albumDetail = await _client.getAlbumDetail(albumId);
+            // 同步到外层引用（catch 块访问提升后的可空变量）
+            albumDetailRef = albumDetail;
 
             if (cancelToken.isCancelled) return;
 
             // 先并行获取所有章节的详情 + scrambleId，加速启动
-            final detailByPhotoId = <String, PhotoDetail>{};
             final scrambleIds = <String, int>{};
             final detailFutures = <Future<void>>[];
             for (final episode in albumDetail.episodes)
@@ -77,7 +85,6 @@ extension DownloadServiceAlbumHandler on DownloadService
 
             // 断点续传：扫描本地已有图片，纳入初始完成集合
             // 这样进度条与持久化的 currentImage 不会因为续传而从 0 跳到 N
-            final completedImages = <_AlbumImageKey>{};
             // 断点续传：扫描本地已有图片
             final albumDir = '$downloadDir${Platform.pathSeparator}$safeAlbumTitle';
             for (final episode in albumDetail.episodes)
@@ -110,6 +117,9 @@ extension DownloadServiceAlbumHandler on DownloadService
                 taskId, completedImages.length, totalImages,
                 totalImages > 0 ? completedImages.length / totalImages : 0.0,
                 'running', completedImages.isNotEmpty ? '续传中' : '正在下载',
+                chapterProgress: _buildChapterProgress(
+                    albumDetail, detailByPhotoId, completedImages,
+                ),
             );
             // 续传时若有已部分下载的章节，立即推送一次边下边看事件，让 UI 显示「阅读」按钮
             if (partialDownloadedPhotoIds.isNotEmpty)
@@ -120,13 +130,15 @@ extension DownloadServiceAlbumHandler on DownloadService
                     downloadedPhotoIds,
                     partialDownloadedPhotoIds,
                     totalImages,
+                    detailByPhotoId,
+                    completedImages,
                 );
             }
 
-            // 全任务并发：所有章节共用一个信号量
+            // 并发信号量：章节之间串行，章节内的图片共用此信号量并发下载
             final semaphore = DownloadSemaphore(_imageThreadCount);
             final rotator = DomainRotator(_client.imageDomainList.length);
-            final futures = <Future<String>>[]; // 返回 saveDir，用于最后兜底封面
+            // 记录第一个可用章节目录（最早章节），供封面下载失败时兜底
             String lastSaveDir = '';
 
             Future<void> reportProgress()
@@ -138,6 +150,9 @@ extension DownloadServiceAlbumHandler on DownloadService
                 ).then((_) => _emitProgress(
                     taskId, doneCount, totalImages, progress,
                     'running', '正在下载',
+                    chapterProgress: _buildChapterProgress(
+                        albumDetail, detailByPhotoId, completedImages,
+                    ),
                 ));
             }
 
@@ -163,91 +178,99 @@ extension DownloadServiceAlbumHandler on DownloadService
                 await Directory(saveDir).create(recursive: true);
                 final aid = int.tryParse(episode.photoId) ?? 0;
 
+                // 章节内并发：本章所有图片任务一起派发，由信号量统一限流，
+                // 单章即可吃满 [_imageThreadCount] 并发上限
+                final pageFutures = <Future<void>>[];
                 for (var i = 0; i < detail.pageArr.length; i++)
                 {
-                    if (cancelToken.isCancelled) break;
-                    // 续传：本地已有且 .ok 标记则跳过
-                    if (completedImages.contains(_AlbumImageKey(episode.photoId, i)))
+                    pageFutures.add(() async
                     {
-                        continue;
-                    }
-                    final filename = detail.pageArr[i];
-                    onPauseSignal();
-                    if (cancelToken.isCancelled) break;
-                    await semaphore.acquire();
-                    try
-                    {
-                        if (cancelToken.isCancelled) continue;
-                        final result = await downloadOneImageWithDecode(
-                            client: _client,
-                            cancelToken: cancelToken,
-                            photoId: episode.photoId,
-                            filename: filename,
-                            pageIndex: i,
-                            saveDir: saveDir,
-                            scrambleId: scrambleId,
-                            aid: aid,
-                            rotator: rotator,
-                        );
-                        if (result.success && result.bytes > 0)
+                        onPauseSignal();
+                        if (cancelToken.isCancelled) return;
+                        final pageIndex = i;
+                        // 续传：本地已有且 .ok 标记则跳过
+                        if (completedImages.contains(_AlbumImageKey(episode.photoId, pageIndex)))
                         {
-                            _taskStats[taskId]?.addBytes(result.bytes);
+                            return;
                         }
-                        completedImages.add(_AlbumImageKey(episode.photoId, i));
-                        // 边下边看：只要有一张图下载成功，立即把该章节加入部分可读集合
-                        if (partialDownloadedPhotoIds.add(episode.photoId))
+                        final filename = detail.pageArr[pageIndex];
+                        await semaphore.acquire();
+                        try
                         {
-                            _emitPartialProgress(
-                                taskId,
-                                albumDetail,
-                                downloadedPhotoIds,
-                                partialDownloadedPhotoIds,
-                                totalImages,
+                            if (cancelToken.isCancelled) return;
+                            final result = await downloadOneImageWithDecode(
+                                client: _client,
+                                cancelToken: cancelToken,
+                                photoId: episode.photoId,
+                                filename: filename,
+                                pageIndex: pageIndex,
+                                saveDir: saveDir,
+                                scrambleId: scrambleId,
+                                aid: aid,
+                                rotator: rotator,
                             );
+                            if (result.success && result.bytes > 0)
+                            {
+                                _taskStats[taskId]?.addBytes(result.bytes);
+                            }
+                            completedImages.add(_AlbumImageKey(episode.photoId, pageIndex));
+                            // 边下边看：只要有一张图下载成功，立即把该章节加入部分可读集合
+                            if (partialDownloadedPhotoIds.add(episode.photoId))
+                            {
+                                _emitPartialProgress(
+                                    taskId,
+                                    albumDetail,
+                                    downloadedPhotoIds,
+                                    partialDownloadedPhotoIds,
+                                    totalImages,
+                                    detailByPhotoId,
+                                    completedImages,
+                                );
+                            }
+                            // 增量：单章全部下载完成后立即把该章节写入 library
+                            if (_isEpisodeComplete(detail.pageArr.length, episode.photoId, completedImages))
+                            {
+                                downloadedPhotoIds.add(episode.photoId);
+                                // 【性能优化 P2】整章完成时写章节级 .complete 标记，
+                                // 并删除该章节所有 .ok 碎片文件
+                                await ChapterCompleteHelper.markChapterComplete(
+                                    saveDir, detail.pageArr.length,
+                                );
+                                await ChapterCompleteHelper.removeAllOkMarks(saveDir);
+                                _emitPartialProgress(
+                                    taskId,
+                                    albumDetail,
+                                    downloadedPhotoIds,
+                                    partialDownloadedPhotoIds,
+                                    totalImages,
+                                    detailByPhotoId,
+                                    completedImages,
+                                );
+                            }
+                            await reportProgress();
                         }
-                        // 增量：单章全部下载完成后立即把该章节写入 library
-                        if (_isEpisodeComplete(detail.pageArr.length, episode.photoId, completedImages))
+                        finally
                         {
-                            downloadedPhotoIds.add(episode.photoId);
-                            // 【性能优化 P2】整章完成时写章节级 .complete 标记，
-                            // 并删除该章节所有 .ok 碎片文件
-                            await ChapterCompleteHelper.markChapterComplete(
-                                saveDir, detail.pageArr.length,
-                            );
-                            await ChapterCompleteHelper.removeAllOkMarks(saveDir);
-                            _emitPartialProgress(
-                                taskId,
-                                albumDetail,
-                                downloadedPhotoIds,
-                                partialDownloadedPhotoIds,
-                                totalImages,
-                            );
+                            semaphore.release();
                         }
-                        await reportProgress();
-                    }
-                    finally
-                    {
-                        semaphore.release();
-                    }
+                    }());
                 }
+                await Future.wait(pageFutures);
                 return saveDir;
             }
 
-            // 把所有章节的下载任务全部派发，由信号量统一限流
+            // 章节串行：按顺序逐章下载，前面的章节先完成，便于用户边下边读；
+            // 单章内部已并发派发图片，整体下载速度不受影响
             for (var epIdx = 0; epIdx < albumDetail.episodes.length; epIdx++)
             {
                 if (cancelToken.isCancelled) break;
                 final episode = albumDetail.episodes[epIdx];
                 final detail = detailByPhotoId[episode.photoId];
                 if (detail == null) continue;
-                futures.add(downloadEpisode(episode, detail).then((dir)
-                {
-                    if (dir.isNotEmpty) lastSaveDir = dir;
-                    return dir;
-                }));
+                final dir = await downloadEpisode(episode, detail);
+                // 记录第一个可用章节目录，供封面下载失败时兜底（即最早章节的第一页）
+                if (dir.isNotEmpty && lastSaveDir.isEmpty) lastSaveDir = dir;
             }
-
-            await Future.wait(futures);
 
             // 处理暂停：状态置为 paused，方便 UI 区分；不清空本地文件
             if (wasPaused || cancelToken.isCancelled)
@@ -255,7 +278,12 @@ extension DownloadServiceAlbumHandler on DownloadService
                 await _taskDao.updateTaskStatus(
                     taskId, 'paused', '已暂停', 0.0,
                 );
-                _emitStatus(taskId, 'paused', '已暂停', 0.0);
+                _emitStatus(
+                    taskId, 'paused', '已暂停', 0.0,
+                    chapterProgress: _buildChapterProgress(
+                        albumDetail, detailByPhotoId, completedImages,
+                    ),
+                );
                 return;
             }
 
@@ -299,25 +327,38 @@ extension DownloadServiceAlbumHandler on DownloadService
                     episodeCount: albumDetail.episodes.length,
                     localCoverPath: localCoverPath,
                     localPath: localPath,
+                    chapterProgress: _buildChapterProgress(
+                        albumDetail, detailByPhotoId, completedImages,
+                    ),
                 );
             }
         }
         catch (e)
         {
+            // catch 块的章节进度：详情获取成功时组装各章最后进度，否则留空
+            final chapterProgress = albumDetailRef != null
+                ? _buildChapterProgress(albumDetailRef, detailByPhotoId, completedImages)
+                : const <String, ChapterProgress>{};
             // 暂停优先于异常：cancel 后已派发任务会抛 CancelException
             if (wasPaused || _pausedTasks.contains(taskId))
             {
                 await _taskDao.updateTaskStatus(
                     taskId, 'paused', '已暂停', 0.0,
                 );
-                _emitStatus(taskId, 'paused', '已暂停', 0.0);
+                _emitStatus(
+                    taskId, 'paused', '已暂停', 0.0,
+                    chapterProgress: chapterProgress,
+                );
             }
             else if (!cancelToken.isCancelled)
             {
                 await _taskDao.updateTaskStatus(
                     taskId, 'failed', '下载失败: $e', 0.0,
                 );
-                _emitStatus(taskId, 'failed', '下载失败: $e', 0.0);
+                _emitStatus(
+                    taskId, 'failed', '下载失败: $e', 0.0,
+                    chapterProgress: chapterProgress,
+                );
             }
         }
         finally
@@ -363,12 +404,16 @@ extension DownloadServiceAlbumHandler on DownloadService
     }
 
     /// 发送增量进度事件（用于 library 实时同步已完成的章节）
+    ///
+    /// 同时携带章节级进度映射，详情页据此渲染每章节的独立进度条
     void _emitPartialProgress(
         String taskId,
         AlbumDetail albumDetail,
         Set<String> downloadedPhotoIds,
         Set<String> partialDownloadedPhotoIds,
         int totalImages,
+        Map<String, PhotoDetail> detailByPhotoId,
+        Set<_AlbumImageKey> completedImages,
     )
     {
         final stats = _taskStats[taskId];
@@ -388,78 +433,41 @@ extension DownloadServiceAlbumHandler on DownloadService
             author: albumDetail.author,
             pageCount: totalImages,
             episodeCount: albumDetail.episodes.length,
+            chapterProgress: _buildChapterProgress(
+                albumDetail, detailByPhotoId, completedImages,
+            ),
         ));
     }
 
-    /// 下载本子封面并保存为 cover.jpg
-    Future<String> _downloadAlbumCover(
-        String albumId,
-        String savePath, {
-        String fallbackFirstImage = '',
-    }) async
+    /// 从已完成图片集合折叠出章节级进度映射
+    ///
+    /// 遍历本子所有章节，结合 [detailByPhotoId] 的总页数与
+    /// [completedImages] 中按章节统计的已完成图片数，
+    /// 组装 photoId → [ChapterProgress] 映射供详情页渲染
+    Map<String, ChapterProgress> _buildChapterProgress(
+        AlbumDetail albumDetail,
+        Map<String, PhotoDetail> detailByPhotoId,
+        Set<_AlbumImageKey> completedImages,
+    )
     {
-        try
+        // 按章节折叠已完成图片数
+        final perChapterDone = <String, int>{};
+        for (final key in completedImages)
         {
-            final dir = File(savePath).parent;
-            if (!await dir.exists())
-            {
-                await dir.create(recursive: true);
-            }
+            perChapterDone[key.photoId] = (perChapterDone[key.photoId] ?? 0) + 1;
         }
-        catch (_)
+        // 组装每章节的进度（总页数取自章节详情）
+        final result = <String, ChapterProgress>{};
+        for (final episode in albumDetail.episodes)
         {
-        }
-
-        for (final size in const ['_3x4', '_2x3', ''])
-        {
-            final url = _client.getAlbumCoverUrl(albumId, size: size);
-            if (await _fetchBytesToFile(url, savePath)) return savePath;
-        }
-
-        if (fallbackFirstImage.isNotEmpty)
-        {
-            final src = File(fallbackFirstImage);
-            if (await src.exists())
-            {
-                try
-                {
-                    await src.copy(savePath);
-                    return savePath;
-                }
-                catch (_)
-                {
-                    return fallbackFirstImage;
-                }
-            }
-        }
-        return '';
-    }
-
-    /// 从 URL 拉取字节并写入文件
-    Future<bool> _fetchBytesToFile(String url, String savePath) async
-    {
-        try
-        {
-            final resp = await _client.dio.get<List<int>>(
-                url,
-                options: Options(
-                    responseType: ResponseType.bytes,
-                    receiveTimeout: const Duration(seconds: 15),
-                    sendTimeout: const Duration(seconds: 10),
-                ),
+            final detail = detailByPhotoId[episode.photoId];
+            if (detail == null) continue;
+            result[episode.photoId] = ChapterProgress(
+                completed: perChapterDone[episode.photoId] ?? 0,
+                total: detail.pageArr.length,
             );
-            final code = resp.statusCode ?? 0;
-            final data = resp.data;
-            if (code >= 200 && code < 300 && data != null && data.isNotEmpty)
-            {
-                await File(savePath).writeAsBytes(data, flush: true);
-                return true;
-            }
         }
-        catch (_)
-        {
-        }
-        return false;
+        return result;
     }
 }
 

@@ -13,7 +13,7 @@ import 'download_progress.dart';
     {
         final DownloadTaskView view;
 
-        /// 点击回调（completed 任务进入阅读；非编辑模式下也用于「阅读」）
+        /// 点击回调（非编辑模式下进入本子详情页；编辑模式下切换选中）
         final VoidCallback? onTap;
 
         /// 取消按钮回调（仅 active 任务）
@@ -103,10 +103,11 @@ import 'download_progress.dart';
         final statusColor = statusColorOf(context, task.status);
         final statusText = statusTextOf(task.status);
 
-        // 非编辑模式下，若已有可读内容，点击卡片整体即可进入阅读
+        // 编辑模式下点击卡片切换选中；非编辑模式统一走 onTap
+        // （进入本子详情页）——「阅读」入口保留在底部操作按钮行
         final tapCallback = isEditing
             ? (onTap == null ? null : () => onTap?.call())
-            : (onRead ?? onTap);
+            : onTap;
 
         return InkWell(
             onTap: tapCallback,

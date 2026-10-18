@@ -131,6 +131,12 @@ class DownloadNotifier extends DownloadNotifierBase
         {
             targetTask.partialDownloadedPhotoIds = progress.partialDownloadedPhotoIds;
         }
+        // 同步章节级进度映射：详情页据此渲染每章节的独立进度条；
+        // 暂停/失败/取消事件也携带最后进度，保留供 UI 展示
+        if (progress.chapterProgress.isNotEmpty)
+        {
+            targetTask.chapterProgress = progress.chapterProgress;
+        }
         if (progress.status == 'completed')
         {
             if (progress.author.isNotEmpty) targetTask.coverAuthor = progress.author;
@@ -327,4 +333,21 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
     final taskDao = ref.watch(taskDaoProvider);
     final downloadService = ref.watch(downloadServiceProvider);
     return DownloadNotifier(ref, taskDao, downloadService);
+});
+
+/// 指定本子关联的下载任务列表（family 按 albumId 缓存）
+///
+/// 匹配规则：
+/// - album 类型任务：jmId == albumId（整本下载）
+/// - photo 类型任务：albumId == albumId（该本子的单章下载）
+/// 详情页据此渲染整本进度、章节级进度与暂停/继续/取消等操作
+final albumDownloadTasksProvider =
+    Provider.family<List<DownloadTaskModel>, String>((ref, albumId)
+{
+    final tasks = ref.watch(downloadProvider).tasks;
+    return tasks
+        .where((t) =>
+            (t.taskType == 'album' && t.jmId == albumId) ||
+            (t.taskType == 'photo' && t.albumId == albumId))
+        .toList();
 });

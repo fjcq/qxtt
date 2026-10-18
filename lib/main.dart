@@ -7,10 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/common/app_logger.dart';
 import 'providers/auth_provider.dart';
+import 'providers/config_provider.dart';
 import 'utils/library_storage.dart';
 
 /// 应用入口
-void main()
+Future<void> main() async
 {
     WidgetsFlutterBinding.ensureInitialized();
 
@@ -28,9 +29,13 @@ void main()
     unawaited(_migrateOkToComplete());
 
     // 使用显式 ProviderContainer 以便启动时主动初始化部分 Provider：
-    // authProvider 是懒加载的，若只在设置页/收藏页被 watch，
-    // 启动后直接进详情页收藏会误判为未登录，故在此触发会话恢复
+    // 1. 先等待磁盘配置加载完成，保证首页挂载时 jmClientProvider 首建即为
+    //    最终配置（含代理），避免配置异步就绪后重建客户端导致首页首次
+    //    加载结果被丢弃（表现为启动后首页空白，点击分类才有数据）
+    // 2. authProvider 是懒加载的，若只在设置页/收藏页被 watch，
+    //    启动后直接进详情页收藏会误判为未登录，故在此触发会话恢复
     final container = ProviderContainer();
+    await container.read(configProvider.notifier).initialized;
     container.read(authProvider);
 
     runApp(

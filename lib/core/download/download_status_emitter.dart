@@ -4,6 +4,9 @@ part of 'download_service.dart';
 extension DownloadServiceStatusEmitter on DownloadService
 {
     /// 发送进度事件
+    ///
+    /// [chapterProgress] 章节级进度映射（photoId → 进度），
+    /// 详情页据此渲染每章节的独立进度条；缺省为空映射
     void _emitProgress(
         String taskId,
         int current,
@@ -12,6 +15,7 @@ extension DownloadServiceStatusEmitter on DownloadService
         String status,
         String message, {
         String? photoId,
+        Map<String, ChapterProgress> chapterProgress = const {},
     })
     {
         final stats = _taskStats[taskId];
@@ -25,16 +29,21 @@ extension DownloadServiceStatusEmitter on DownloadService
             status: status,
             message: message,
             photoId: photoId,
+            chapterProgress: chapterProgress,
         ));
     }
 
     /// 发送状态变更事件（用于完成/失败/取消等状态）
+    ///
+    /// [chapterProgress] 章节级进度映射，用于暂停/失败/取消时保留
+    /// 各章节的最后进度供详情页展示；缺省为空映射
     void _emitStatus(
         String taskId,
         String status,
         String message,
         double progress, {
         String? photoId,
+        Map<String, ChapterProgress> chapterProgress = const {},
     })
     {
         final stats = _taskStats[taskId];
@@ -48,11 +57,15 @@ extension DownloadServiceStatusEmitter on DownloadService
             status: status,
             message: message,
             photoId: photoId,
+            chapterProgress: chapterProgress,
         ));
     }
 
     /// 发送带附加负载的状态事件
     /// 用于完成时回传 photoId 列表与 album 元信息
+    ///
+    /// [chapterProgress] 章节级进度映射（完成时各章应为满进度）；
+    /// 缺省为空映射
     void _emitStatusWithPayload(
         String taskId,
         String status,
@@ -65,6 +78,7 @@ extension DownloadServiceStatusEmitter on DownloadService
         String localCoverPath = '',
         String localPath = '',
         String? photoId,
+        Map<String, ChapterProgress> chapterProgress = const {},
     })
     {
         final stats = _taskStats[taskId];
@@ -84,6 +98,7 @@ extension DownloadServiceStatusEmitter on DownloadService
             localCoverPath: localCoverPath,
             localPath: localPath,
             photoId: photoId,
+            chapterProgress: chapterProgress,
         ));
     }
 

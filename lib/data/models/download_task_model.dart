@@ -1,3 +1,27 @@
+/// 章节级下载进度
+///
+/// 记录单个章节（photoId）的图片完成数与总页数，
+/// 仅在内存中传递与展示，不持久化
+class ChapterProgress
+{
+    /// 已完成的图片数
+    final int completed;
+
+    /// 章节总页数
+    final int total;
+
+    const ChapterProgress({
+        required this.completed,
+        required this.total,
+    });
+
+    /// 进度比例 0.0 ~ 1.0（总页数为 0 时返回 0）
+    double get ratio => total > 0 ? (completed / total).clamp(0.0, 1.0) : 0.0;
+
+    /// 是否已完成
+    bool get isComplete => total > 0 && completed >= total;
+}
+
 /// 下载任务模型
 class DownloadTaskModel
 {
@@ -34,6 +58,13 @@ class DownloadTaskModel
     /// 用于"边下边看"：任意一张图成功下载后即把对应章节加入此集合，
     /// 区别于 [downloadedPhotoIds]（仅在章节全部完成时追加）
     List<String> partialDownloadedPhotoIds = const [];
+
+    /// 章节级进度映射（photoId → 进度）
+    ///
+    /// - album 任务：每个章节各自的已完成页数 / 总页数
+    /// - photo 任务：仅包含该任务对应的单章
+    /// 仅在内存中传递（由进度事件实时填充），不持久化
+    Map<String, ChapterProgress> chapterProgress = const {};
 
     /// 任务状态: "pending" | "running" | "completed" | "failed" | "cancelled"
     String status = 'pending';

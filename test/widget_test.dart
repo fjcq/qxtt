@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:jmcomic_mobile/app.dart';
-import 'package:jmcomic_mobile/providers/search_provider.dart';
+import 'package:jmcomic_mobile/providers/category_provider.dart';
 
 /// 用于 App smoke test 的假分类 Provider，不触发真实网络请求
 class _FakeCategoryNotifier extends CategoryNotifier

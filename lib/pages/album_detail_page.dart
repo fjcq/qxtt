@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/jm/jm_entity.dart';
-import '../core/jm/jm_image.dart';
+import '../data/models/download_task_model.dart';
 import '../providers/search_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/library_provider.dart';
-import '../providers/auth_provider.dart';
-import '../providers/favorite_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/episode_list.dart';
 import '../widgets/loading_widget.dart';
 import '../widgets/error_widget.dart';
+import 'album_detail_download_bar.dart';
+import 'album_detail_favorite_button.dart';
+import 'album_detail_info_section.dart';
 
 /// 本子详情页
+///
+/// 下载功能已合并进本页：AppBar 下载按钮状态化（发起/暂停/继续/重试）、
+/// 章节列表每行独立进度条、底部下载状态栏（整本进度 + 暂停/继续/取消），
+/// 下载页仍保留作为全局任务管理入口
 class AlbumDetailPage extends ConsumerWidget
 {
     /// 本子 ID
@@ -46,6 +50,10 @@ class AlbumDetailPage extends ConsumerWidget
             Future.microtask(() => ref.read(libraryProvider.notifier).loadLibrary());
         }
 
+        // 本子关联的下载任务（整本 + 各单章）
+        final downloadTasks = ref.watch(albumDownloadTasksProvider(albumId));
+        final albumTask = firstAlbumTask(downloadTasks);
+
         return Scaffold(
             appBar: AppBar(
                 title: const Text('详情'),
@@ -55,22 +63,32 @@ class AlbumDetailPage extends ConsumerWidget
                 ),
                 actions: [
                     if (state.detail != null)
-                        _FavoriteButton(
+                        AlbumDetailFavoriteButton(
                             albumId: albumId,
                             // 以详情接口返回的 is_favorite 初始化收藏状态，
                             // 使从收藏页等任意入口进入时状态与真实收藏夹一致
                             initiallyFavorite: state.detail!.isFavorite,
                         ),
                     if (state.detail != null)
-                        IconButton(
-                            icon: const Icon(Icons.download),
-                            onPressed: () => _downloadAlbum(context, ref, state.detail!),
+                        _DownloadAppBarButton(
+                            albumTask: albumTask,
+                            onDownload: () =>
+                                _downloadAlbum(context, ref, state.detail!),
                         ),
                 ],
             ),
             body: _buildBody(context, ref, state),
             bottomNavigationBar: state.detail != null
-                ? _buildBottomBar(context, ref, state)
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        // 整本下载活跃/可恢复时：顶部显示下载状态栏（进度 + 操作）
+                        if (albumTask != null && !albumTask.isFinal)
+                            AlbumDetailDownloadBar(task: albumTask),
+                        // 原有按钮行（继续阅读 / 本地阅读 / 下载整本）
+                        _buildBottomBar(context, ref, state),
+                    ],
+                )
                 : null,
         );
     }
@@ -107,175 +125,20 @@ class AlbumDetailPage extends ConsumerWidget
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                     // 封面和信息
-                    _buildInfoSection(context, state, ref),
+                    AlbumDetailInfoSection(state: state),
                     const SizedBox(height: 16),
                     // 标签
-                    if (detail.tags.isNotEmpty) _buildTags(context, detail.tags),
+                    if (detail.tags.isNotEmpty) buildDetailTags(context, detail.tags),
                     const SizedBox(height: 16),
                     // 简介
-                    if (detail.description.isNotEmpty) _buildDescription(context, detail.description),
+                    if (detail.description.isNotEmpty)
+                        buildDetailDescription(context, detail.description),
                     const SizedBox(height: 16),
                     // 章节列表
                     if (detail.episodes.isNotEmpty)
                         _buildEpisodes(context, ref, detail),
                 ],
             ),
-        );
-    }
-
-    /// 构建信息区域
-    Widget _buildInfoSection(BuildContext context, AlbumDetailState state, WidgetRef ref)
-    {
-        final detail = state.detail!;
-        final client = ref.watch(jmClientProvider);
-        final coverUrl = client.getAlbumCoverUrl(detail.albumId);
-
-        return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-                // 封面
-                ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                        imageUrl: coverUrl,
-                        cacheManager: JmImageCacheManager.instance,
-                        width: 120,
-                        height: 160,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
-                            width: 120,
-                            height: 160,
-                            color: context.appColors.surfaceVariant,
-                            child: Center(
-                                child: Icon(Icons.image, color: context.appColors.textDisabled),
-                            ),
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                            width: 120,
-                            height: 160,
-                            color: context.appColors.surfaceVariant,
-                            child: Center(
-                                child: Icon(Icons.broken_image, color: context.appColors.textDisabled),
-                            ),
-                        ),
-                    ),
-                ),
-                const SizedBox(width: 16),
-                // 信息
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                            Text(
-                                detail.name,
-                                style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: context.appColors.textPrimary,
-                                ),
-                            ),
-                            const SizedBox(height: 8),
-                            _buildInfoRow(context, '作者', detail.author),
-                            _buildInfoRow(
-                                context,
-                                '页数',
-                                state.isLoadingPageCount && state.displayPageCount == 0
-                                    ? '计算中...'
-                                    : '${state.displayPageCount}',
-                            ),
-                            _buildInfoRow(context, '章节', '${detail.episodeCount}'),
-                            if (detail.pubDate.isNotEmpty)
-                                _buildInfoRow(context, '日期', detail.pubDate),
-                            if (detail.views.isNotEmpty)
-                                _buildInfoRow(context, '浏览', detail.views),
-                        ],
-                    ),
-                ),
-            ],
-        );
-    }
-
-    /// 构建信息行
-    Widget _buildInfoRow(BuildContext context, String label, String value)
-    {
-        return Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-                children: [
-                    Text(
-                        '$label: ',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: context.appColors.textSecondary,
-                        ),
-                    ),
-                    Flexible(
-                        child: Text(
-                            value,
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: context.appColors.textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                        ),
-                    ),
-                ],
-            ),
-        );
-    }
-
-    /// 构建标签
-    Widget _buildTags(BuildContext context, List<String> tags)
-    {
-        return Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: tags.map((tag) =>
-                Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                        color: context.appColors.surfaceVariant,
-                        borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                        tag,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: context.appColors.textSecondary,
-                        ),
-                    ),
-                ),
-            ).toList(),
-        );
-    }
-
-    /// 构建简介
-    Widget _buildDescription(BuildContext context, String description)
-    {
-        return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-                Text(
-                    '简介',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: context.appColors.textPrimary,
-                    ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                    description,
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: context.appColors.textSecondary,
-                        height: 1.6,
-                    ),
-                ),
-            ],
         );
     }
 
@@ -295,6 +158,14 @@ class AlbumDetailPage extends ConsumerWidget
     {
         // 监听本子已下载的章节 ID 集合，用于隐藏对应下载按钮
         final downloadedPhotoIds = ref.watch(downloadedEpisodesProvider(albumId));
+        // 监听本子关联的下载任务，合并章节级进度（整本优先，单章补充）
+        final downloadTasks = ref.watch(albumDownloadTasksProvider(albumId));
+        final albumTask = firstAlbumTask(downloadTasks);
+        final mergedProgress = mergeChapterProgress(downloadTasks);
+        // 等待状态：整本任务活跃但章节进度尚未就绪（正在获取详情）
+        final waitingForDetail = albumTask != null &&
+            albumTask.isActive &&
+            albumTask.chapterProgress.isEmpty;
 
         return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -311,6 +182,8 @@ class AlbumDetailPage extends ConsumerWidget
                 EpisodeList(
                     episodes: detail.episodes,
                     downloadedPhotoIds: downloadedPhotoIds,
+                    chapterProgress: mergedProgress,
+                    hasActiveTask: waitingForDetail,
                     onDownload: (episode) =>
                         _downloadPhoto(context, ref, episode, detail),
                     onRead: (episode) => _pushReader(context, ref, episode.photoId),
@@ -319,7 +192,7 @@ class AlbumDetailPage extends ConsumerWidget
         );
     }
 
-    /// 构建底部操作栏（有阅读进度时显示"继续阅读"；下载状态随下载进度切换）
+    /// 构建底部操作栏（有阅读进度时显示"继续阅读"；下载中显示整本状态栏）
     Widget _buildBottomBar(BuildContext context, WidgetRef ref, AlbumDetailState state)
     {
         final detail = state.detail!;
@@ -328,6 +201,9 @@ class AlbumDetailPage extends ConsumerWidget
 
         // 已下载章节集合，用于本地阅读路由与整本下载状态判断
         final downloaded = ref.watch(downloadedEpisodesProvider(albumId));
+        // 本子关联任务：整本下载活跃时右键禁用（状态栏已提供整本级操作）
+        final downloadTasks = ref.watch(albumDownloadTasksProvider(albumId));
+        final albumTask = firstAlbumTask(downloadTasks);
         // 整本（所有章节）均已下载时，底部按钮切换为"本地阅读"
         final allDownloaded =
             detail.episodes.isNotEmpty && downloaded.length >= detail.episodes.length;
@@ -344,6 +220,15 @@ class AlbumDetailPage extends ConsumerWidget
                     break;
                 }
             }
+        }
+
+        final albumActive = albumTask != null && albumTask.isActive;
+        // 右侧按钮文案：整本下载中显示进度百分比（禁用），否则按下载/阅读状态切换
+        String rightLabel = allDownloaded ? '本地阅读' : '下载整本';
+        if (albumActive)
+        {
+            final progress = albumTask.progress;
+            rightLabel = '下载中 ${(progress * 100).toStringAsFixed(0)}%';
         }
 
         return SafeArea(
@@ -375,31 +260,33 @@ class AlbumDetailPage extends ConsumerWidget
                             ),
                             const SizedBox(width: 12),
                         ],
-                        // 右侧按钮：整本已下载 → "本地阅读"（优先进度章节，其次第一章）；
+                        // 右侧按钮：整本已下载 → "本地阅读"；整本下载中 → "下载中…"（禁用）；
                         // 否则 → "下载整本"（补齐缺失章节）
                         Expanded(
                             child: ElevatedButton(
-                                onPressed: ()
-                                {
-                                    if (allDownloaded)
+                                onPressed: albumActive
+                                    ? null
+                                    : ()
                                     {
-                                        final resume = canResume
-                                            ? (history!.lastReadPhotoId ?? '')
-                                            : '';
-                                        final target = resume.isNotEmpty
-                                            ? resume
-                                            : detail.episodes.first.photoId;
-                                        context.push('/reader/$target');
-                                    }
-                                    else
-                                    {
-                                        _downloadAlbum(context, ref, detail);
-                                    }
-                                },
+                                        if (allDownloaded)
+                                        {
+                                            final resume = canResume
+                                                ? (history!.lastReadPhotoId ?? '')
+                                                : '';
+                                            final target = resume.isNotEmpty
+                                                ? resume
+                                                : detail.episodes.first.photoId;
+                                            context.push('/reader/$target');
+                                        }
+                                        else
+                                        {
+                                            _downloadAlbum(context, ref, detail);
+                                        }
+                                    },
                                 style: ElevatedButton.styleFrom(
                                     minimumSize: const Size(double.infinity, 48),
                                 ),
-                                child: Text(allDownloaded ? '本地阅读' : '下载整本'),
+                                child: Text(rightLabel),
                             ),
                         ),
                     ],
@@ -453,107 +340,73 @@ class AlbumDetailPage extends ConsumerWidget
     }
 }
 
-/// 详情页收藏按钮
+/// AppBar 下载按钮：随整本任务状态切换图标与行为
 ///
-/// 服务端收藏接口为 Toggle 语义（已收藏则取消，未收藏则添加），
-/// 本按钮以局部状态跟踪最近一次操作结果：实心=已收藏，空心=未收藏/未知。
-/// 未登录时点击引导去设置页登录。
-class _FavoriteButton extends ConsumerStatefulWidget
+/// - 无整本任务 → 下载图标，点击发起整本下载
+/// - running/pending → 进度环，点击暂停
+/// - paused → 继续图标，点击继续
+/// - failed/cancelled → 错误图标，点击重试
+/// 仅单章任务存在时保持下载图标（整本可另发起）
+class _DownloadAppBarButton extends ConsumerWidget
 {
-    /// 本子 ID
-    final String albumId;
+    /// 整本下载任务（无则显示普通下载图标）
+    final DownloadTaskModel? albumTask;
 
-    /// 初始收藏状态（来自详情接口 is_favorite）
-    final bool initiallyFavorite;
+    /// 发起整本下载回调
+    final VoidCallback onDownload;
 
-    const _FavoriteButton({
-        required this.albumId,
-        this.initiallyFavorite = false,
+    const _DownloadAppBarButton({
+        required this.albumTask,
+        required this.onDownload,
     });
 
     @override
-    ConsumerState<_FavoriteButton> createState() => _FavoriteButtonState();
-}
-
-class _FavoriteButtonState extends ConsumerState<_FavoriteButton>
-{
-    /// 收藏状态：null=未知，true=已收藏，false=未收藏
-    bool? _favActive;
-
-    /// 是否正在请求
-    bool _busy = false;
-
-    @override
-    void initState()
+    Widget build(BuildContext context, WidgetRef ref)
     {
-        super.initState();
-        // 用详情接口返回的 is_favorite 作为初始收藏状态
-        _favActive = widget.initiallyFavorite;
-    }
-
-    /// 切换收藏状态
-    Future<void> _toggle() async
-    {
-        if (_busy) return;
-
-        // 未登录引导：先确保启动时的会话恢复已完成（幂等），再判断登录态
-        if (!ref.read(authProvider).loggedIn)
+        final task = albumTask;
+        // 无整本任务（或已终结）：普通下载入口
+        if (task == null || task.isFinal)
         {
-            await ref.read(authProvider.notifier).ensureRestored();
-        }
-        if (!mounted) return;
-        if (!ref.read(authProvider).loggedIn)
-        {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('请先在设置页登录账号后再收藏')),
+            return IconButton(
+                icon: const Icon(Icons.download),
+                tooltip: '下载整本',
+                onPressed: onDownload,
             );
-            return;
         }
-
-        setState(() => _busy = true);
-        try
+        final notifier = ref.read(downloadProvider.notifier);
+        // 运行中：显示进度环，点击暂停
+        if (task.isActive)
         {
-            final type = await ref
-                .read(favoriteProvider.notifier)
-                .toggle(widget.albumId);
-            if (!mounted) return;
-            setState(()
-            {
-                _favActive = type == 'add';
-                _busy = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text(type == 'add' ? '已加入收藏' : '已取消收藏'),
+            return IconButton(
+                tooltip: '暂停下载',
+                icon: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        value: task.totalImages > 0
+                            ? task.progress.clamp(0.0, 1.0)
+                            : null,
+                        strokeWidth: 2.5,
+                    ),
                 ),
+                onPressed: () => notifier.pauseTask(task.taskId),
             );
         }
-        catch (e)
+        // 已暂停：点击继续
+        if (task.isPaused)
         {
-            if (!mounted) return;
-            setState(() => _busy = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('收藏操作失败: $e')),
+            return IconButton(
+                icon: const Icon(Icons.play_circle_outline),
+                tooltip: '继续下载',
+                onPressed: () => notifier.resumeTask(task.taskId),
             );
         }
-    }
-
-    @override
-    Widget build(BuildContext context)
-    {
+        // 失败/取消：点击重试
         return IconButton(
-            icon: _busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                )
-                : Icon(_favActive == true
-                    ? Icons.favorite
-                    : Icons.favorite_border),
-            color: _favActive == true ? context.appColors.error : null,
-            tooltip: '收藏',
-            onPressed: _toggle,
+            icon: const Icon(Icons.error_outline),
+            color: context.appColors.error,
+            tooltip: '重试下载',
+            onPressed: () => notifier.retryTask(task.taskId),
         );
     }
 }

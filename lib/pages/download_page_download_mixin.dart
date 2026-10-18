@@ -72,6 +72,9 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                             padding: const EdgeInsets.only(bottom: 10),
                             child: DownloadTaskTile(
                                 view: v,
+                                onTap: () => isTaskEditMode
+                                    ? _toggleSelectTask(v.task.taskId)
+                                    : _openTaskDetail(v),
                                 onRead: v.hasReadableContent
                                     ? () => _openTaskReader(v)
                                     : null,
@@ -97,6 +100,9 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                             padding: const EdgeInsets.only(bottom: 10),
                             child: DownloadTaskTile(
                                 view: v,
+                                onTap: () => isTaskEditMode
+                                    ? _toggleSelectTask(v.task.taskId)
+                                    : _openTaskDetail(v),
                                 onRead: v.hasReadableContent
                                     ? () => _openTaskReader(v)
                                     : null,
@@ -130,7 +136,7 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
                                     selectedTaskIds.contains(v.task.taskId),
                                 onTap: () => isTaskEditMode
                                     ? _toggleSelectTask(v.task.taskId)
-                                    : null,
+                                    : _openTaskDetail(v),
                                 onRead: v.hasReadableContent
                                     ? () => _openTaskReader(v)
                                     : null,
@@ -238,7 +244,22 @@ mixin DownloadPageDownloadMixin on ConsumerState<DownloadPage>
         });
     }
 
-    /// 打开下载中任务的阅读器
+    /// 进入任务对应的本子详情页
+    ///
+    /// 卡片点击统一跳转详情（整本任务取 jmId，单章任务取 albumId），
+    /// 阅读入口保留在卡片底部「阅读」按钮
+    void _openTaskDetail(DownloadTaskView view)
+    {
+        final albumId = view.isAlbumTask ? view.task.jmId : view.task.albumId;
+        if (albumId.isEmpty)
+        {
+            showSnack('缺少本子信息，无法进入详情');
+            return;
+        }
+        context.push('/album/$albumId');
+    }
+
+    /// 进入任务对应的阅读器
     ///
     /// 根据 [view] 的任务类型决定路由：
     /// - 整本任务：跳转到第一个已下载章节（部分下载也可阅读，缺失页走网络）
