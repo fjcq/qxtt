@@ -53,6 +53,17 @@ final downloadedEpisodesProvider = Provider.family<Set<String>, String>((ref, al
     return album.downloadedEpisodes.toSet();
 });
 
+/// 全局已下载章节 photoId 扁平集合（跨本子）
+///
+/// photoId 全局唯一，直接扁平展开即可。
+/// 供历史页等没有 albumId 上下文的入口判断"该章节是否已下载"，
+/// 以决定跳转本地阅读器还是在线阅读器。
+final downloadedPhotoIdIndexProvider = Provider<Set<String>>((ref)
+{
+    final albums = ref.watch(libraryProvider).albums;
+    return albums.expand((a) => a.downloadedEpisodes).toSet();
+});
+
 /// 获取下载根目录（与 ConfigNotifier 默认值保持一致）
 final downloadDirProvider = Provider<String>((ref)
 {

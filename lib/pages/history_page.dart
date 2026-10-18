@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/browse_history_provider.dart';
+import '../providers/library_provider.dart';
 import '../data/database/browse_history_dao.dart';
 import '../core/jm/jm_image.dart';
 import '../theme/app_colors.dart';
@@ -24,7 +25,16 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     void initState()
     {
         super.initState();
-        Future.microtask(() => ref.read(browseHistoryProvider.notifier).loadHistory());
+        Future.microtask(() =>
+        {
+            ref.read(browseHistoryProvider.notifier).loadHistory(),
+            // 兜底加载书架数据：续读入口需根据已下载集合决定本地/在线阅读器
+            if (!ref.read(libraryProvider).isLoading &&
+                ref.read(libraryProvider).albums.isEmpty)
+              {
+                ref.read(libraryProvider.notifier).loadLibrary(),
+              },
+        });
     }
 
     @override
@@ -180,7 +190,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                                 color: context.appColors.textDisabled,
                             ),
                         ),
-                        // 续读快捷入口：跳转在线阅读器，自动恢复上次阅读位置
+                        // 续读快捷入口：已下载章节走本地阅读器，否则走在线阅读器
                         if (resumePhotoId != null && resumePhotoId.isNotEmpty)
                             IconButton(
                                 icon: Icon(
@@ -190,8 +200,12 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                                 ),
                                 tooltip: '续读第${item.lastReadPage + 1}页',
                                 visualDensity: VisualDensity.compact,
-                                onPressed: () =>
-                                    context.push('/reader/online/$resumePhotoId'),
+                                onPressed: () => context.push(
+                                    ref.read(downloadedPhotoIdIndexProvider)
+                                            .contains(resumePhotoId)
+                                        ? '/reader/$resumePhotoId'
+                                        : '/reader/online/$resumePhotoId',
+                                ),
                             ),
                     ],
                 ),

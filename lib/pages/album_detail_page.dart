@@ -279,6 +279,17 @@ class AlbumDetailPage extends ConsumerWidget
         );
     }
 
+    /// 跳转阅读器：已下载章节走本地阅读器（离线可读），未下载走在线阅读器
+    void _pushReader(BuildContext context, WidgetRef ref, String photoId)
+    {
+        final downloaded = ref.read(downloadedEpisodesProvider(albumId));
+        context.push(
+            downloaded.contains(photoId)
+                ? '/reader/$photoId'
+                : '/reader/online/$photoId',
+        );
+    }
+
     /// 构建章节列表
     Widget _buildEpisodes(BuildContext context, WidgetRef ref, AlbumDetail detail)
     {
@@ -302,18 +313,24 @@ class AlbumDetailPage extends ConsumerWidget
                     downloadedPhotoIds: downloadedPhotoIds,
                     onDownload: (episode) =>
                         _downloadPhoto(context, ref, episode, detail),
-                    onRead: (episode) => context.push('/reader/online/${episode.photoId}'),
+                    onRead: (episode) => _pushReader(context, ref, episode.photoId),
                 ),
             ],
         );
     }
 
-    /// 构建底部操作栏（有阅读进度时显示"继续阅读"+"下载整本"）
+    /// 构建底部操作栏（有阅读进度时显示"继续阅读"；下载状态随下载进度切换）
     Widget _buildBottomBar(BuildContext context, WidgetRef ref, AlbumDetailState state)
     {
         final detail = state.detail!;
         final canResume = state.hasReadProgress;
         final history = state.history;
+
+        // 已下载章节集合，用于本地阅读路由与整本下载状态判断
+        final downloaded = ref.watch(downloadedEpisodesProvider(albumId));
+        // 整本（所有章节）均已下载时，底部按钮切换为"本地阅读"
+        final allDownloaded =
+            detail.episodes.isNotEmpty && downloaded.length >= detail.episodes.length;
 
         // 继续阅读按钮文案：定位到上次阅读的章节名（找不到章节时仅显示"继续阅读"）
         String resumeLabel = '继续阅读';
@@ -334,13 +351,18 @@ class AlbumDetailPage extends ConsumerWidget
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                     children: [
-                        // 继续阅读（仅在有有效进度时显示）
+                        // 继续阅读（仅在有有效进度时显示），已下载章节自动走本地阅读器
                         if (canResume) ...[
                             Expanded(
                                 child: ElevatedButton.icon(
-                                    onPressed: () => context.push(
-                                        '/reader/online/${history!.lastReadPhotoId}',
-                                    ),
+                                    onPressed: ()
+                                    {
+                                        final photoId = history!.lastReadPhotoId;
+                                        if (photoId != null && photoId.isNotEmpty)
+                                        {
+                                            _pushReader(context, ref, photoId);
+                                        }
+                                    },
                                     icon: const Icon(Icons.play_arrow, size: 20),
                                     label: Text(
                                         resumeLabel,
@@ -353,14 +375,31 @@ class AlbumDetailPage extends ConsumerWidget
                             ),
                             const SizedBox(width: 12),
                         ],
-                        // 下载整本
+                        // 右侧按钮：整本已下载 → "本地阅读"（优先进度章节，其次第一章）；
+                        // 否则 → "下载整本"（补齐缺失章节）
                         Expanded(
                             child: ElevatedButton(
-                                onPressed: () => _downloadAlbum(context, ref, detail),
+                                onPressed: ()
+                                {
+                                    if (allDownloaded)
+                                    {
+                                        final resume = canResume
+                                            ? (history!.lastReadPhotoId ?? '')
+                                            : '';
+                                        final target = resume.isNotEmpty
+                                            ? resume
+                                            : detail.episodes.first.photoId;
+                                        context.push('/reader/$target');
+                                    }
+                                    else
+                                    {
+                                        _downloadAlbum(context, ref, detail);
+                                    }
+                                },
                                 style: ElevatedButton.styleFrom(
                                     minimumSize: const Size(double.infinity, 48),
                                 ),
-                                child: const Text('下载整本'),
+                                child: Text(allDownloaded ? '本地阅读' : '下载整本'),
                             ),
                         ),
                     ],
