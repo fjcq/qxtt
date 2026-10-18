@@ -48,6 +48,9 @@ app.*.map.json
 /windows/flutter/generated_plugins.cmake
 /windows/flutter/generated_plugin_registrant.cc
 
+# 发布产物归档目录（编译脚本自动生成）
+/dist/
+
 # Environment
 .env
 *.env

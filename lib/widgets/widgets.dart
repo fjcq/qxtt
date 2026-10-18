@@ -9,6 +9,7 @@ export 'downloaded_album_card.dart';
 export 'category_chip.dart';
 export 'episode_list.dart';
 export 'loading_widget.dart';
+export 'shimmer_skeleton.dart';
 export 'error_widget.dart';
 export 'sort_filter_bar.dart';
 export 'storage_summary_bar.dart';

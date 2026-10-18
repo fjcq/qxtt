@@ -130,7 +130,10 @@ class SmartDownloadService
             _emit(task.taskId, 0, 0, 0.0, 'running', '正在获取章节详情');
 
             final photoDetail = await _client.getPhotoDetail(photoId);
-            final scrambleId = await _client.getScrambleId(photoId);
+            // 优先使用 APP API 响应自带的 scramble_id，仅缺失时走 HTML 兜底
+            final scrambleId = photoDetail.scrambleId != 0
+                ? photoDetail.scrambleId
+                : await _client.getScrambleId(photoId);
 
             if (cancelToken.isCancelled) return;
 

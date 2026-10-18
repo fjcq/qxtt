@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/common/app_logger.dart';
+
 /// 浏览历史模型
 class BrowseHistoryModel
 {
@@ -59,9 +61,11 @@ class BrowseHistoryDao
                     .toList();
             }
         }
-        catch (_)
+        catch (e)
         {
+            // 加载失败不阻断业务，但记录日志便于排查数据丢失问题
             _history = [];
+            appLogger.w('BrowseHistoryDao 加载浏览历史失败: $e');
         }
     }
 
@@ -77,9 +81,10 @@ class BrowseHistoryDao
             final jsonList = _history.map((h) => _toJson(h)).toList();
             await file.writeAsString(jsonEncode(jsonList), flush: true);
         }
-        catch (_)
+        catch (e)
         {
-            // 忽略写入失败
+            // 忽略写入失败，但记录日志
+            appLogger.w('BrowseHistoryDao 保存浏览历史失败: $e');
         }
     }
 
@@ -110,11 +115,18 @@ class BrowseHistoryDao
             ..lastReadPhotoId = json['lastReadPhotoId']?.toString();
     }
 
-    /// 添加浏览记录（已存在则更新）
+    /// 添加浏览记录（已存在则仅更新元数据并置顶，保留已有阅读进度）
     Future<void> addHistory(BrowseHistoryModel item) async
     {
         await _ensureLoaded();
-        _history.removeWhere((h) => h.albumId == item.albumId);
+        final idx = _history.indexWhere((h) => h.albumId == item.albumId);
+        if (idx >= 0)
+        {
+            // 已存在：保留阅读进度，避免详情页重复记录时把进度重置为 0
+            final existing = _history.removeAt(idx);
+            item.lastReadPage = existing.lastReadPage;
+            item.lastReadPhotoId = existing.lastReadPhotoId;
+        }
         _history.insert(0, item);
         // 最多保留200条
         if (_history.length > 200)

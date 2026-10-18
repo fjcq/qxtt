@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/jm/jm_entity.dart';
 
@@ -182,10 +183,18 @@ mixin ReaderBaseMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     _activePhotoId = initialPhotoId;
     loadInitial();
     _scrollController.addListener(_onScroll);
+    // 阅读时保持屏幕常亮（仅移动端需要，桌面端无自动息屏场景）
+    if (!isDesktop) {
+      WakelockPlus.enable();
+    }
   }
 
   @override
   void dispose() {
+    // 离开阅读器时恢复系统息屏策略
+    if (!isDesktop) {
+      WakelockPlus.disable();
+    }
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _focusNode.dispose();

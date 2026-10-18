@@ -6,7 +6,7 @@ import '../providers/search_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/album_card.dart';
 import '../widgets/category_chip.dart';
-import '../widgets/loading_widget.dart';
+import '../widgets/shimmer_skeleton.dart';
 import '../widgets/error_widget.dart';
 
 /// 分类列表定义
@@ -157,7 +157,7 @@ class _CategoryPageState extends ConsumerState<CategoryPage>
     {
         if (state.isLoading && state.results.isEmpty)
         {
-            return const LoadingWidget(message: '加载中...');
+            return const AlbumGridSkeleton();
         }
 
         if (state.error != null && state.results.isEmpty)
@@ -181,35 +181,45 @@ class _CategoryPageState extends ConsumerState<CategoryPage>
             );
         }
 
-        return NotificationListener<ScrollNotification>(
-            onNotification: (notification)
-            {
-                if (notification is ScrollEndNotification &&
-                    notification.metrics.pixels >=
-                        notification.metrics.maxScrollExtent * 0.8)
+        // 下拉刷新 + 触底加载更多
+        return RefreshIndicator(
+            color: context.appColors.accent,
+            backgroundColor: context.appColors.surface,
+            onRefresh: () => ref.read(categoryProvider.notifier).loadCategory(
+                category: _selectedCategory,
+                time: _selectedTime,
+            ),
+            child: NotificationListener<ScrollNotification>(
+                onNotification: (notification)
                 {
-                    ref.read(categoryProvider.notifier).loadMore();
-                }
-                return false;
-            },
-            child: GridView.builder(
-                padding: const EdgeInsets.all(8),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 0.55,
-                ),
-                itemCount: state.results.length,
-                itemBuilder: (context, index)
-                {
-                    final album = state.results[index];
-                    return AlbumCard(
-                        key: ValueKey(album.id),
-                        album: album,
-                        onTap: () => context.push('/album/${album.id}'),
-                    );
+                    if (notification is ScrollEndNotification &&
+                        notification.metrics.pixels >=
+                            notification.metrics.maxScrollExtent * 0.8)
+                    {
+                        ref.read(categoryProvider.notifier).loadMore();
+                    }
+                    return false;
                 },
+                child: GridView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(8),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 0.55,
+                    ),
+                    itemCount: state.results.length,
+                    itemBuilder: (context, index)
+                    {
+                        final album = state.results[index];
+                        return AlbumCard(
+                            key: ValueKey(album.id),
+                            album: album,
+                            onTap: () => context.push('/album/${album.id}'),
+                        );
+                    },
+                ),
             ),
         );
     }

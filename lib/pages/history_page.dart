@@ -100,6 +100,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
     /// 构建历史项
     Widget _buildHistoryItem(BrowseHistoryModel item)
     {
+        // 上次阅读的章节 ID（非空时展示续读快捷入口）
+        final resumePhotoId = item.lastReadPhotoId;
         return Dismissible(
             key: Key(item.albumId),
             direction: DismissDirection.endToStart,
@@ -168,12 +170,30 @@ class _HistoryPageState extends ConsumerState<HistoryPage>
                         color: context.appColors.textSecondary,
                     ),
                 ),
-                trailing: Text(
-                    _formatTime(item.browsedAt),
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: context.appColors.textDisabled,
-                    ),
+                trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                        Text(
+                            _formatTime(item.browsedAt),
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: context.appColors.textDisabled,
+                            ),
+                        ),
+                        // 续读快捷入口：跳转在线阅读器，自动恢复上次阅读位置
+                        if (resumePhotoId != null && resumePhotoId.isNotEmpty)
+                            IconButton(
+                                icon: Icon(
+                                    Icons.play_circle_outline,
+                                    color: context.appColors.accent,
+                                    size: 26,
+                                ),
+                                tooltip: '续读第${item.lastReadPage + 1}页',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () =>
+                                    context.push('/reader/online/$resumePhotoId'),
+                            ),
+                    ],
                 ),
                 onTap: () => context.push('/album/${item.albumId}'),
             ),

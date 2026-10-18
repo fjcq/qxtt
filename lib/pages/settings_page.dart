@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/app_version.dart';
+import '../providers/auth_provider.dart';
 import '../providers/config_provider.dart';
 import '../data/models/app_config_model.dart';
 import '../theme/app_colors.dart';
@@ -17,11 +18,15 @@ class SettingsPage extends ConsumerWidget
     {
         final configState = ref.watch(configProvider);
         final config = configState.config;
+        final authState = ref.watch(authProvider);
 
         return Scaffold(
             appBar: AppBar(title: const Text('设置')),
             body: ListView(
                 children: [
+                    // ===== 账号 =====
+                    ..._buildAccountSection(context, ref, authState),
+
                     // ===== 下载设置 =====
                     _buildSectionHeader(context, '下载设置'),
                     ListTile(
@@ -112,6 +117,181 @@ class SettingsPage extends ConsumerWidget
                         title: const Text('下载管理'),
                         trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
                         onTap: () => context.push('/downloads'),
+                    ),
+                ],
+            ),
+        );
+    }
+
+    /// 构建账号区块
+    ///
+    /// 未登录：显示"登录账号"入口；已登录：显示用户信息、
+    /// 我的收藏入口与退出登录。
+    List<Widget> _buildAccountSection(
+        BuildContext context,
+        WidgetRef ref,
+        AuthState authState,
+    )
+    {
+        return [
+            _buildSectionHeader(context, '账号'),
+            if (!authState.loggedIn)
+                ListTile(
+                    leading: Icon(Icons.person_outline, color: context.appColors.accent),
+                    title: const Text('登录账号'),
+                    subtitle: Text(
+                        authState.error ?? '登录后可使用收藏功能',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: authState.error != null
+                                ? context.appColors.error
+                                : context.appColors.textSecondary,
+                        ),
+                    ),
+                    trailing: authState.busy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : Icon(Icons.chevron_right, color: context.appColors.textDisabled),
+                    onTap: authState.busy ? null : () => _showLoginDialog(context, ref),
+                )
+            else ...[
+                ListTile(
+                    leading: Icon(Icons.person, color: context.appColors.accent),
+                    title: Text(authState.username.isEmpty ? '已登录' : authState.username),
+                    subtitle: Text(
+                        '收藏 ${authState.albumFavorites} 本',
+                        style: TextStyle(fontSize: 12, color: context.appColors.textSecondary),
+                    ),
+                ),
+                ListTile(
+                    leading: Icon(Icons.favorite_border, color: context.appColors.accent),
+                    title: const Text('我的收藏'),
+                    trailing: Icon(Icons.chevron_right, color: context.appColors.textDisabled),
+                    onTap: () => context.push('/favorites'),
+                ),
+                ListTile(
+                    leading: Icon(Icons.logout, color: context.appColors.error),
+                    title: Text('退出登录', style: TextStyle(color: context.appColors.error)),
+                    onTap: () => _confirmLogout(context, ref),
+                ),
+            ],
+        ];
+    }
+
+    /// 显示登录对话框（用户名 + 密码）
+    void _showLoginDialog(BuildContext context, WidgetRef ref)
+    {
+        final usernameController = TextEditingController();
+        final passwordController = TextEditingController();
+        final formKey = GlobalKey<FormState>();
+
+        showDialog(
+            context: context,
+            builder: (dialogContext) => Form(
+                key: formKey,
+                child: AlertDialog(
+                    title: const Text('登录账号'),
+                    content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                            TextFormField(
+                                controller: usernameController,
+                                decoration: const InputDecoration(
+                                    labelText: '用户名',
+                                    prefixIcon: Icon(Icons.person_outline),
+                                ),
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty) ? '请输入用户名' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                                controller: passwordController,
+                                obscureText: true,
+                                decoration: const InputDecoration(
+                                    labelText: '密码',
+                                    prefixIcon: Icon(Icons.lock_outline),
+                                ),
+                                validator: (v) =>
+                                    (v == null || v.isEmpty) ? '请输入密码' : null,
+                                onFieldSubmitted: (_) =>
+                                    _submitLogin(context, ref, dialogContext, formKey,
+                                        usernameController, passwordController),
+                            ),
+                        ],
+                    ),
+                    actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: const Text('取消'),
+                        ),
+                        ElevatedButton(
+                            onPressed: () => _submitLogin(context, ref, dialogContext,
+                                formKey, usernameController, passwordController),
+                            child: const Text('登录'),
+                        ),
+                    ],
+                ),
+            ),
+        );
+    }
+
+    /// 提交登录：校验表单 → 调用 authProvider → 成功关闭对话框并提示
+    Future<void> _submitLogin(
+        BuildContext context,
+        WidgetRef ref,
+        BuildContext dialogContext,
+        GlobalKey<FormState> formKey,
+        TextEditingController usernameController,
+        TextEditingController passwordController,
+    ) async
+    {
+        if (!(formKey.currentState?.validate() ?? false)) return;
+
+        final ok = await ref.read(authProvider.notifier).login(
+            usernameController.text.trim(),
+            passwordController.text,
+        );
+        if (!context.mounted) return;
+
+        if (ok)
+        {
+            Navigator.pop(dialogContext);
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('登录成功')),
+            );
+        }
+        else
+        {
+            // 失败：错误信息已写入 authProvider.error，对话框保持打开
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(ref.read(authProvider).error ?? '登录失败')),
+            );
+        }
+    }
+
+    /// 确认退出登录
+    void _confirmLogout(BuildContext context, WidgetRef ref)
+    {
+        showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+                title: const Text('退出登录'),
+                content: const Text('确定要退出当前账号吗？'),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('取消'),
+                    ),
+                    TextButton(
+                        onPressed: ()
+                        {
+                            Navigator.pop(dialogContext);
+                            ref.read(authProvider.notifier).logout();
+                        },
+                        child: Text('退出', style: TextStyle(color: context.appColors.error)),
                     ),
                 ],
             ),

@@ -5,6 +5,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/library_album_model.dart';
 
+import '../../core/common/app_logger.dart';
+
 /// 单本漫画的本地占用统计
 /// 供 [LibraryDao.updateAlbumsSize] 批量写入使用
 class AlbumSizeStats
@@ -116,9 +118,10 @@ class LibraryDao
                 await _saveIndex();
             }
         }
-        catch (_)
+        catch (e)
         {
             _albums = [];
+            appLogger.w('LibraryDao 加载书架索引失败: $e');
         }
     }
 
@@ -160,9 +163,10 @@ class LibraryDao
             // 删除旧版文件
             await legacyFile.delete();
         }
-        catch (_)
+        catch (e)
         {
             // 迁移失败不阻塞应用启动，下次启动会重试
+            appLogger.w('LibraryDao 旧版数据迁移失败: $e');
         }
     }
 
@@ -177,8 +181,9 @@ class LibraryDao
             final json = jsonDecode(content) as Map<String, dynamic>;
             return _fromJson(json);
         }
-        catch (_)
+        catch (e)
         {
+            appLogger.w('LibraryDao 加载本子文件失败: $albumId, $e');
             return null;
         }
     }
@@ -194,9 +199,10 @@ class LibraryDao
                 jsonEncode(_toJson(album)), flush: true,
             );
         }
-        catch (_)
+        catch (e)
         {
-            // 忽略写入失败
+            // 忽略写入失败，但记录日志
+            appLogger.w('LibraryDao 写入本子文件失败: $e');
         }
     }
 
@@ -211,9 +217,10 @@ class LibraryDao
                 await file.delete();
             }
         }
-        catch (_)
+        catch (e)
         {
-            // 忽略删除失败
+            // 忽略删除失败，但记录日志
+            appLogger.w('LibraryDao 删除本子文件失败: $e');
         }
     }
 
@@ -228,9 +235,10 @@ class LibraryDao
                 jsonEncode(_albumIds.toList()), flush: true,
             );
         }
-        catch (_)
+        catch (e)
         {
-            // 忽略写入失败
+            // 忽略写入失败，但记录日志
+            appLogger.w('LibraryDao 写入书架索引失败: $e');
         }
     }
 
@@ -432,9 +440,10 @@ class LibraryDao
             {
                 await albumsDir.delete(recursive: true);
             }
-            catch (_)
+            catch (e)
             {
-                // 忽略
+                // 忽略，但记录日志
+                appLogger.w('LibraryDao 清空书架目录失败: $e');
             }
         }
         _albums = [];

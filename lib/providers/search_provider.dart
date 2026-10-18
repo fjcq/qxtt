@@ -5,20 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/jm/jm_client.dart';
 import '../core/jm/jm_entity.dart';
 import '../core/jm/jm_image.dart';
-import '../data/database/app_database.dart';
 import '../data/database/task_dao.dart';
 import '../data/database/library_dao.dart';
 import '../data/database/search_history_dao.dart';
 import '../data/models/search_history_model.dart';
+import '../data/database/browse_history_dao.dart';
+import 'browse_history_provider.dart';
 import 'config_provider.dart';
-
-/// 数据库 Provider
-final appDatabaseProvider = Provider<AppDatabase>((ref)
-{
-    final db = AppDatabase();
-    ref.onDispose(() async => await db.close());
-    return db;
-});
 
 /// JmClient Provider
 /// 监听 configProvider 的代理配置，配置变更时自动重建客户端
@@ -242,12 +235,16 @@ class AlbumDetailState
     /// 是否正在计算总页数
     final bool isLoadingPageCount;
 
+    /// 本子的浏览历史记录（含阅读进度，未读过为 null）
+    final BrowseHistoryModel? history;
+
     const AlbumDetailState({
         this.detail,
         this.isLoading = false,
         this.error,
         this.totalPageCount = 0,
         this.isLoadingPageCount = false,
+        this.history,
     });
 
     /// 用于 UI 显示的总页数，优先使用异步计算结果
@@ -257,12 +254,20 @@ class AlbumDetailState
         return detail?.pageCount ?? 0;
     }
 
+    /// 是否存在有效的阅读进度（可用于"继续阅读"入口）
+    bool get hasReadProgress
+    {
+        final h = history;
+        return h != null && h.lastReadPhotoId != null && h.lastReadPhotoId!.isNotEmpty;
+    }
+
     AlbumDetailState copyWith({
         AlbumDetail? detail,
         bool? isLoading,
         String? error,
         int? totalPageCount,
         bool? isLoadingPageCount,
+        BrowseHistoryModel? history,
     })
     {
         return AlbumDetailState(
@@ -271,6 +276,7 @@ class AlbumDetailState
             error: error,
             totalPageCount: totalPageCount ?? this.totalPageCount,
             isLoadingPageCount: isLoadingPageCount ?? this.isLoadingPageCount,
+            history: history ?? this.history,
         );
     }
 }
@@ -280,7 +286,11 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
 {
     final JmClient _client;
 
-    AlbumDetailNotifier(this._client) : super(const AlbumDetailState());
+    /// 浏览历史数据访问对象（记录浏览 + 读取上次阅读进度）
+    final BrowseHistoryDao _historyDao;
+
+    AlbumDetailNotifier(this._client, this._historyDao)
+        : super(const AlbumDetailState());
 
     /// 加载本子详情
     Future<void> loadDetail(String albumId) async
@@ -290,7 +300,26 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
         try
         {
             final detail = await _client.getAlbumDetail(albumId);
-            state = AlbumDetailState(detail: detail);
+
+            // 记录浏览历史（DAO 层保留已有阅读进度），随后读取进度供"继续阅读"使用
+            try
+            {
+                await _historyDao.addHistory(BrowseHistoryModel()
+                    ..albumId = detail.albumId
+                    ..title = detail.name
+                    ..coverUrl = _client.getAlbumCoverUrl(detail.albumId)
+                    ..author = detail.author
+                    ..browsedAt = DateTime.now().toIso8601String()
+                    ..lastReadPage = 0,
+                );
+                final history = await _historyDao.getHistory(albumId);
+                state = AlbumDetailState(detail: detail, history: history);
+            }
+            catch (_)
+            {
+                // 历史记录失败不影响详情展示
+                state = AlbumDetailState(detail: detail);
+            }
 
             // API 不再返回 page_count，异步统计各章节图片总数以显示真实总页数
             if (detail.pageCount <= 0 && detail.episodes.isNotEmpty)
@@ -344,7 +373,8 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
 final albumDetailProvider = StateNotifierProvider.family<AlbumDetailNotifier, AlbumDetailState, String>((ref, albumId)
 {
     final client = ref.watch(jmClientProvider);
-    return AlbumDetailNotifier(client);
+    final historyDao = ref.watch(browseHistoryDaoProvider);
+    return AlbumDetailNotifier(client, historyDao);
 });
 
 /// 分类浏览状态

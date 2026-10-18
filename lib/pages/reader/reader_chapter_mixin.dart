@@ -248,11 +248,14 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
         final client = ref.read(jmClientProvider);
         try {
             final photoDetail = await client.getPhotoDetail(activePhotoId);
-            int scrambleId = 0;
-            try {
-                scrambleId = await client.getScrambleId(activePhotoId);
-            } catch (e) {
-                debugPrint('[reader] getScrambleId($activePhotoId) 失败: $e');
+            // 优先使用 APP API 响应自带的 scramble_id，仅缺失时走 HTML 兜底
+            int scrambleId = photoDetail.scrambleId;
+            if (scrambleId == 0) {
+                try {
+                    scrambleId = await client.getScrambleId(activePhotoId);
+                } catch (e) {
+                    debugPrint('[reader] getScrambleId($activePhotoId) 失败: $e');
+                }
             }
             _chapterApiCache[activePhotoId] =
                 _ChapterApiInfo(photoDetail, scrambleId);
@@ -434,11 +437,14 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
         final client = ref.read(jmClientProvider);
         try {
             final detail = await client.getPhotoDetail(photoId);
-            int scrambleId = 0;
-            try {
-                scrambleId = await client.getScrambleId(photoId);
-            } catch (e) {
-                debugPrint('[reader] getScrambleId($photoId) 失败: $e');
+            // 优先使用 APP API 响应自带的 scramble_id，仅缺失时走 HTML 兜底
+            int scrambleId = detail.scrambleId;
+            if (scrambleId == 0) {
+                try {
+                    scrambleId = await client.getScrambleId(photoId);
+                } catch (e) {
+                    debugPrint('[reader] getScrambleId($photoId) 失败: $e');
+                }
             }
             _chapterApiCache[photoId] = _ChapterApiInfo(detail, scrambleId);
             _activeChapterDetail = detail;
@@ -456,11 +462,14 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
         final client = ref.read(jmClientProvider);
         try {
             final detail = await client.getPhotoDetail(photoId);
-            int scrambleId = 0;
-            try {
-                scrambleId = await client.getScrambleId(photoId);
-            } catch (e) {
-                debugPrint('[reader] getScrambleId($photoId) 失败: $e');
+            // 优先使用 APP API 响应自带的 scramble_id，仅缺失时走 HTML 兜底
+            int scrambleId = detail.scrambleId;
+            if (scrambleId == 0) {
+                try {
+                    scrambleId = await client.getScrambleId(photoId);
+                } catch (e) {
+                    debugPrint('[reader] getScrambleId($photoId) 失败: $e');
+                }
             }
             _chapterApiCache[photoId] = _ChapterApiInfo(detail, scrambleId);
 
@@ -646,11 +655,14 @@ mixin ReaderChapterMixin<T extends ConsumerStatefulWidget>
         final client = ref.read(jmClientProvider);
         try {
             final photoDetail = await client.getPhotoDetail(activePhotoId);
-            int scrambleId = 0;
-            try {
-                scrambleId = await client.getScrambleId(activePhotoId);
-            } catch (e) {
-                debugPrint('[reader] _retryLoadAlbumDetail: getScrambleId 失败: $e');
+            // 优先使用 APP API 响应自带的 scramble_id，仅缺失时走 HTML 兜底
+            int scrambleId = photoDetail.scrambleId;
+            if (scrambleId == 0) {
+                try {
+                    scrambleId = await client.getScrambleId(activePhotoId);
+                } catch (e) {
+                    debugPrint('[reader] _retryLoadAlbumDetail: getScrambleId 失败: $e');
+                }
             }
             _chapterApiCache[activePhotoId] =
                 _ChapterApiInfo(photoDetail, scrambleId);

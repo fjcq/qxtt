@@ -377,7 +377,10 @@ class _JmClientCore
             return JmCrypto.decodeDefaultRespData(encrypted, ts);
         }
 
-        final dataStr = data.toString();
+        // 对齐 Python jmcomic 2.7.8 的 BOM 修复（#585）：
+        // 服务端部分响应可能携带 UTF-8 BOM（U+FEFF），jsonDecode 会因此抛 FormatException
+        // 导致误走 AES 解密分支。Dart 的 trim() 会剥离 U+FEFF。
+        final dataStr = data.toString().trim();
         try
         {
             final json = jsonDecode(dataStr) as Map<String, dynamic>;

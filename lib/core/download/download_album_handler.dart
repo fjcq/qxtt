@@ -45,7 +45,10 @@ extension DownloadServiceAlbumHandler on DownloadService
                 detailFutures.add(() async
                 {
                     final detail = await _client.getPhotoDetail(photoId);
-                    final scrambleId = await _client.getScrambleId(photoId);
+                    // 优先使用 APP API 响应自带的 scramble_id，仅缺失时走 HTML 兜底
+                    final scrambleId = detail.scrambleId != 0
+                        ? detail.scrambleId
+                        : await _client.getScrambleId(photoId);
                     if (cancelToken.isCancelled) return;
                     detailByPhotoId[photoId] = detail;
                     scrambleIds[photoId] = scrambleId;

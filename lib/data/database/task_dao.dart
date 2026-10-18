@@ -5,6 +5,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/download_task_model.dart';
 
+import '../../core/common/app_logger.dart';
+
 /// 下载任务数据访问对象（JSON文件持久化）
 class TaskDao
 {
@@ -34,9 +36,10 @@ class TaskDao
                 _tasks = jsonList.map((e) => _fromJson(e as Map<String, dynamic>)).toList();
             }
         }
-        catch (_)
+        catch (e)
         {
             _tasks = [];
+            appLogger.w('TaskDao 加载下载任务失败: $e');
         }
     }
 
@@ -52,9 +55,10 @@ class TaskDao
             final jsonList = _tasks.map((t) => _toJson(t)).toList();
             await file.writeAsString(jsonEncode(jsonList), flush: true);
         }
-        catch (_)
+        catch (e)
         {
-            // 忽略写入失败
+            // 忽略写入失败，但记录日志
+            appLogger.w('TaskDao 保存下载任务失败: $e');
         }
     }
 

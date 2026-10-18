@@ -11,6 +11,7 @@ import '../pages/reader_page.dart';
 import '../pages/download_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/domain_management_page.dart';
+import '../pages/favorite_page.dart';
 
 /// 应用路由配置
 final routerProvider = Provider<GoRouter>((ref)
@@ -88,6 +89,11 @@ final routerProvider = Provider<GoRouter>((ref)
                 path: '/settings/domains',
                 name: 'settings-domains',
                 builder: (context, state) => const DomainManagementPage(),
+            ),
+            GoRoute(
+                path: '/favorites',
+                name: 'favorites',
+                builder: (context, state) => const FavoritePage(),
             ),
         ],
     );

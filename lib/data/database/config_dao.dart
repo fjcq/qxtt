@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/app_config_model.dart';
 
+import '../../core/common/app_logger.dart';
+
 /// 应用配置数据访问对象（JSON 文件持久化）
 /// 存储位置：${appSupportDir}/app_config.json
 class ConfigDao
@@ -36,9 +38,10 @@ class ConfigDao
                 _cache = AppConfigModel.fromJson(json);
             }
         }
-        catch (_)
+        catch (e)
         {
             _cache = null;
+            appLogger.w('ConfigDao 加载配置失败: $e');
         }
     }
 
@@ -65,9 +68,10 @@ class ConfigDao
                 flush: true,
             );
         }
-        catch (_)
+        catch (e)
         {
-            // 忽略写入失败
+            // 忽略写入失败，但记录日志
+            appLogger.w('ConfigDao 保存配置失败: $e');
         }
     }
 

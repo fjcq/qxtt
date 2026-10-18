@@ -320,6 +320,11 @@ class PhotoDetail
     /// 图片后缀
     final String imageSuffix;
 
+    /// 解密参数（scramble_id）
+    /// 对齐 Python jmcomic 库：JmPhotoDetail 本身携带 scramble_id 字段，
+    /// 优先使用该值，仅当缺失（0）时才回退到 chapter_view_template HTML 接口获取。
+    final int scrambleId;
+
     const PhotoDetail({
         required this.photoId,
         required this.albumId,
@@ -327,6 +332,7 @@ class PhotoDetail
         this.pageArr = const [],
         this.imageDomain = '',
         this.imageSuffix = '.jpg',
+        this.scrambleId = 0,
     });
 
     factory PhotoDetail.fromJson(Map<String, dynamic> json)
@@ -350,6 +356,10 @@ class PhotoDetail
                 [],
             imageDomain: json['domain']?.toString() ?? '',
             imageSuffix: json['suffix']?.toString() ?? '.jpg',
+            // scramble_id 安全解析：API 响应通常为 int，防御性兼容字符串
+            scrambleId: json['scramble_id'] is int
+                ? json['scramble_id'] as int
+                : int.tryParse(json['scramble_id']?.toString() ?? '') ?? 0,
         );
     }
 }
@@ -357,27 +367,113 @@ class PhotoDetail
 /// 登录结果
 class LoginResult
 {
-    /// 是否成功
+    /// 是否成功（解密后 data 含 uid 且 AVS token 非空）
     final bool success;
 
     /// 用户名
     final String username;
 
-    /// 消息
+    /// 消息（成功时为欢迎语，失败时为错误提示）
     final String message;
+
+    /// 用户 ID
+    final String uid;
+
+    /// 会话 token（即响应中的 s 字段，作为 Cookie AVS 携带）
+    final String avs;
+
+    /// 用户头像
+    final String photo;
+
+    /// 收藏本子数
+    final int albumFavorites;
+
+    /// 收藏容量上限
+    final int albumFavoritesMax;
 
     const LoginResult({
         required this.success,
         this.username = '',
         this.message = '',
+        this.uid = '',
+        this.avs = '',
+        this.photo = '',
+        this.albumFavorites = 0,
+        this.albumFavoritesMax = 0,
     });
 
+    /// 从解密后的登录响应解析
+    ///
+    /// 对齐 Python jmcomic JmApiAbsClient.login 的响应结构：
+    /// 成功时 data 含 uid/username/s(AVS)/photo/album_favorites 等字段。
     factory LoginResult.fromJson(Map<String, dynamic> json)
     {
+        final uid = json['uid']?.toString() ?? '';
+        final avs = json['s']?.toString() ?? '';
         return LoginResult(
-            success: json['code'] == 200,
+            success: uid.isNotEmpty && avs.isNotEmpty,
             username: json['username']?.toString() ?? '',
             message: json['message']?.toString() ?? '',
+            uid: uid,
+            avs: avs,
+            photo: json['photo']?.toString() ?? '',
+            albumFavorites: (json['album_favorites'] as num?)?.toInt() ?? 0,
+            albumFavoritesMax: (json['album_favorites_max'] as num?)?.toInt() ?? 0,
+        );
+    }
+}
+
+/// 收藏夹列表结果
+///
+/// GET /favorite 解密后的 data 结构（对齐 Python parse_api_to_favorite_page）：
+/// `{list: [SearchItem 结构数组], total: N, ...}`
+class FavoriteResult
+{
+    /// 收藏总数
+    final int total;
+
+    /// 收藏列表（元素与搜索结果项同结构）
+    final List<SearchItem> results;
+
+    const FavoriteResult({
+        required this.total,
+        required this.results,
+    });
+
+    factory FavoriteResult.fromJson(Map<String, dynamic> json)
+    {
+        final list = (json['list'] as List<dynamic>? ?? [])
+            .map((e) => SearchItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+        return FavoriteResult(
+            total: (json['total'] as num?)?.toInt() ?? 0,
+            results: list,
+        );
+    }
+}
+
+/// 收藏/取消收藏操作结果
+///
+/// POST /favorite 为 Toggle 语义：已收藏则取消，未收藏则添加。
+/// 解密后的 data 含 `{type: 'add'|'remove', msg: ...}`
+class FavoriteToggleResult
+{
+    /// 操作类型：add=已添加收藏，remove=已取消收藏
+    final String type;
+
+    /// 提示消息
+    final String message;
+
+    const FavoriteToggleResult({
+        required this.type,
+        this.message = '',
+    });
+
+    factory FavoriteToggleResult.fromJson(Map<String, dynamic> json)
+    {
+        return FavoriteToggleResult(
+            type: json['type']?.toString() ?? '',
+            message: json['msg']?.toString() ?? '',
         );
     }
 }

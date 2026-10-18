@@ -6,7 +6,9 @@ class JmConfig
     static const String appTokenSecret2 = '18comicAPPContent';
     static const String appDataSecret = '185Hcomic3PAPP7R';
     static const String apiDomainServerSecret = 'diosfjckwpqpdfjkvnqQjsik';
-    static const String appVersion = '2.0.26';
+    // 对齐 Python jmcomic 库 2.7.9 的 JmMagicConstants.APP_VERSION（2.1.7）
+    // 该值参与 Token 计算（jm_crypto.dart），过旧的版本号可能被服务端降级处理
+    static const String appVersion = '2.1.7';
 
     // 图片分割阈值
     static const int scramble220980 = 220980;
