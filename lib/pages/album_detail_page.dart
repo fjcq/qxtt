@@ -55,7 +55,12 @@ class AlbumDetailPage extends ConsumerWidget
                 ),
                 actions: [
                     if (state.detail != null)
-                        _FavoriteButton(albumId: albumId),
+                        _FavoriteButton(
+                            albumId: albumId,
+                            // 以详情接口返回的 is_favorite 初始化收藏状态，
+                            // 使从收藏页等任意入口进入时状态与真实收藏夹一致
+                            initiallyFavorite: state.detail!.isFavorite,
+                        ),
                     if (state.detail != null)
                         IconButton(
                             icon: const Icon(Icons.download),
@@ -419,7 +424,13 @@ class _FavoriteButton extends ConsumerStatefulWidget
     /// 本子 ID
     final String albumId;
 
-    const _FavoriteButton({required this.albumId});
+    /// 初始收藏状态（来自详情接口 is_favorite）
+    final bool initiallyFavorite;
+
+    const _FavoriteButton({
+        required this.albumId,
+        this.initiallyFavorite = false,
+    });
 
     @override
     ConsumerState<_FavoriteButton> createState() => _FavoriteButtonState();
@@ -432,6 +443,14 @@ class _FavoriteButtonState extends ConsumerState<_FavoriteButton>
 
     /// 是否正在请求
     bool _busy = false;
+
+    @override
+    void initState()
+    {
+        super.initState();
+        // 用详情接口返回的 is_favorite 作为初始收藏状态
+        _favActive = widget.initiallyFavorite;
+    }
 
     /// 切换收藏状态
     Future<void> _toggle() async

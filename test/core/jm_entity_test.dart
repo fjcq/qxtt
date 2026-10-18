@@ -71,6 +71,38 @@ void main()
 
             expect(detail.pageCount, 42);
         });
+
+        test('is_favorite 为 bool 时应正确解析', ()
+        {
+            final detail = AlbumDetail.fromJson({
+                'id': '438516',
+                'name': '已收藏本子',
+                'series': <dynamic>[],
+                'is_favorite': true,
+            });
+
+            expect(detail.isFavorite, true);
+        });
+
+        test('is_favorite 为字符串 "true"/"false" 或缺失时容错解析', ()
+        {
+            expect(
+                AlbumDetail.fromJson({
+                    'id': '1', 'series': <dynamic>[], 'is_favorite': 'true',
+                }).isFavorite,
+                true,
+            );
+            expect(
+                AlbumDetail.fromJson({
+                    'id': '2', 'series': <dynamic>[], 'is_favorite': 'false',
+                }).isFavorite,
+                false,
+            );
+            expect(
+                AlbumDetail.fromJson({'id': '3', 'series': <dynamic>[]}).isFavorite,
+                false,
+            );
+        });
     });
 
     group('FavoriteResult.fromJson', ()

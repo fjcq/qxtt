@@ -159,6 +159,9 @@ class AlbumDetail
     /// 封面 URL
     final String coverUrl;
 
+    /// 是否已收藏（详情接口 is_favorite 字段，未登录时为 false）
+    final bool isFavorite;
+
     const AlbumDetail({
         required this.albumId,
         required this.name,
@@ -174,6 +177,7 @@ class AlbumDetail
         this.likes = '',
         this.description = '',
         this.coverUrl = '',
+        this.isFavorite = false,
     });
 
     factory AlbumDetail.fromJson(Map<String, dynamic> json)
@@ -249,6 +253,9 @@ class AlbumDetail
             likes: json['likes']?.toString() ?? '',
             description: json['description']?.toString() ?? '',
             coverUrl: coverUrl,
+            // is_favorite 通常为 bool，容错兼容字符串 "true"/"false"
+            isFavorite: json['is_favorite'] == true ||
+                json['is_favorite']?.toString().toLowerCase() == 'true',
         );
     }
 }
