@@ -246,8 +246,11 @@ class AlbumDetailState
     /// 本子的浏览历史记录（含阅读进度，未读过为 null）
     final BrowseHistoryModel? history;
 
-    /// 是否由本地数据兜底生成（网络请求失败时，仅展示已下载内容）
+    /// 当前展示的详情是否来自本地数据（本地优先或网络失败兜底）
     final bool isOfflineFallback;
+
+    /// 是否正在后台尝试联网刷新（本地内容已展示时为 true）
+    final bool isRefreshing;
 
     const AlbumDetailState({
         this.detail,
@@ -257,6 +260,7 @@ class AlbumDetailState
         this.isLoadingPageCount = false,
         this.history,
         this.isOfflineFallback = false,
+        this.isRefreshing = false,
     });
 
     /// 用于 UI 显示的总页数，优先使用异步计算结果
@@ -281,6 +285,7 @@ class AlbumDetailState
         bool? isLoadingPageCount,
         BrowseHistoryModel? history,
         bool? isOfflineFallback,
+        bool? isRefreshing,
     })
     {
         return AlbumDetailState(
@@ -291,6 +296,7 @@ class AlbumDetailState
             isLoadingPageCount: isLoadingPageCount ?? this.isLoadingPageCount,
             history: history ?? this.history,
             isOfflineFallback: isOfflineFallback ?? this.isOfflineFallback,
+            isRefreshing: isRefreshing ?? this.isRefreshing,
         );
     }
 }
@@ -312,19 +318,38 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
     AlbumDetailNotifier(this._client, this._historyDao, this._libraryDao, this._ref)
         : super(const AlbumDetailState());
 
-    /// 加载本子详情
+    /// 加载本子详情（本地优先 + 后台联网刷新）
     ///
-    /// 网络请求失败时回退到本地书架与下载元数据，
-    /// 保证已下载漫画在断网状态下仍能进入详情页并打开本地阅读器。
+    /// 先读取本地书架与下载元数据并立即展示已下载内容，
+    /// 避免弱网/断网时长时间停留在网络等待；随后后台请求完整详情：
+    ///   - 成功：替换为完整详情（含全部章节），离线标记自动清除
+    ///   - 失败：保留本地内容，仅结束刷新状态
+    ///
+    /// 本地没有已下载内容时，行为与原先一致（加载中 → 详情或错误）。
     Future<void> loadDetail(String albumId) async
     {
+        // 先标记加载中，避免页面重建时重复触发 loadDetail
         state = const AlbumDetailState(isLoading: true);
 
+        // 本地优先：读取本地已下载内容并立即展示
+        final localDetail = await _buildOfflineDetail(albumId);
+        final localHistory = await _readHistorySafe(albumId);
+        if (localDetail != null)
+        {
+            state = AlbumDetailState(
+                detail: localDetail,
+                history: localHistory,
+                isOfflineFallback: true,
+                isRefreshing: true,
+            );
+        }
+
+        // 后台联网刷新：成功替换为完整详情，失败保留本地内容
         try
         {
             final detail = await _client.getAlbumDetail(albumId);
 
-            // 记录浏览历史（DAO 层保留已有阅读进度），随后读取进度供"继续阅读"使用
+            // 记录浏览历史（DAO 层保留已有阅读进度）
             try
             {
                 await _historyDao.addHistory(BrowseHistoryModel()
@@ -335,14 +360,14 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
                     ..browsedAt = DateTime.now().toIso8601String()
                     ..lastReadPage = 0,
                 );
-                final history = await _historyDao.getHistory(albumId);
-                state = AlbumDetailState(detail: detail, history: history);
             }
             catch (_)
             {
                 // 历史记录失败不影响详情展示
-                state = AlbumDetailState(detail: detail);
             }
+
+            final history = await _readHistorySafe(albumId);
+            state = AlbumDetailState(detail: detail, history: history);
 
             // API 不再返回 page_count，异步统计各章节图片总数以显示真实总页数
             if (detail.pageCount <= 0 && detail.episodes.isNotEmpty)
@@ -352,27 +377,26 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
         }
         catch (e)
         {
-            // 网络不可用时尝试用本地已下载内容重建详情
-            final localDetail = await _buildOfflineDetail(albumId);
             if (localDetail != null)
             {
-                BrowseHistoryModel? history;
-                try
-                {
-                    history = await _historyDao.getHistory(albumId);
-                }
-                catch (_)
-                {
-                    // 历史记录读取失败不影响离线详情展示
-                }
-                state = AlbumDetailState(
-                    detail: localDetail,
-                    history: history,
-                    isOfflineFallback: true,
-                );
+                // 网络仍不可用：保留已展示的本地内容，仅结束刷新状态
+                state = state.copyWith(isRefreshing: false);
                 return;
             }
             state = AlbumDetailState(error: e.toString());
+        }
+    }
+
+    /// 读取浏览历史（失败返回 null，不影响详情展示）
+    Future<BrowseHistoryModel?> _readHistorySafe(String albumId) async
+    {
+        try
+        {
+            return await _historyDao.getHistory(albumId);
+        }
+        catch (_)
+        {
+            return null;
         }
     }
 

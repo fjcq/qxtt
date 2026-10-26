@@ -125,9 +125,9 @@ class AlbumDetailPage extends ConsumerWidget
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                    // 离线提示：详情由本地数据兜底，仅展示已下载章节
+                    // 本地优先提示：本地内容已展示，或网络失败仅剩本地内容
                     if (state.isOfflineFallback) ...[
-                        _buildOfflineBanner(context, ref),
+                        _buildOfflineBanner(context, ref, state),
                         const SizedBox(height: 16),
                     ],
                     // 封面和信息
@@ -148,11 +148,17 @@ class AlbumDetailPage extends ConsumerWidget
         );
     }
 
-    /// 构建离线兜底提示条
+    /// 构建本地优先 / 离线兜底提示条
     ///
-    /// 说明当前详情来自本地数据，仅展示已下载章节，并提供重新联网后的重试入口。
-    Widget _buildOfflineBanner(BuildContext context, WidgetRef ref)
+    /// - 后台联网刷新中：提示本地内容已展示，正在刷新，不提供重试
+    /// - 刷新失败：提示网络不可用，仅展示本地内容，并提供重试入口
+    Widget _buildOfflineBanner(
+        BuildContext context,
+        WidgetRef ref,
+        AlbumDetailState state,
+    )
     {
+        final refreshing = state.isRefreshing;
         return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -162,26 +168,29 @@ class AlbumDetailPage extends ConsumerWidget
             child: Row(
                 children: [
                     Icon(
-                        Icons.cloud_off,
+                        refreshing ? Icons.cloud_sync : Icons.cloud_off,
                         size: 18,
                         color: context.appColors.accent,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                         child: Text(
-                            '网络不可用，当前仅显示本地已下载内容',
+                            refreshing
+                                ? '已显示本地内容，正在联网刷新…'
+                                : '网络不可用，当前仅显示本地已下载内容',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: context.appColors.textSecondary,
                             ),
                         ),
                     ),
-                    TextButton(
-                        onPressed: () => ref
-                            .read(albumDetailProvider(albumId).notifier)
-                            .loadDetail(albumId),
-                        child: const Text('重试'),
-                    ),
+                    if (!refreshing)
+                        TextButton(
+                            onPressed: () => ref
+                                .read(albumDetailProvider(albumId).notifier)
+                                .loadDetail(albumId),
+                            child: const Text('重试'),
+                        ),
                 ],
             ),
         );
