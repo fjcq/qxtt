@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ import '../data/models/search_history_model.dart';
 import '../data/database/browse_history_dao.dart';
 import 'browse_history_provider.dart';
 import 'config_provider.dart';
+import '../utils/library_storage.dart';
 
 /// JmClient Provider
 /// 仅监听影响客户端构造的代理特征值（useProxy + proxyUrl），
@@ -244,6 +246,9 @@ class AlbumDetailState
     /// 本子的浏览历史记录（含阅读进度，未读过为 null）
     final BrowseHistoryModel? history;
 
+    /// 是否由本地数据兜底生成（网络请求失败时，仅展示已下载内容）
+    final bool isOfflineFallback;
+
     const AlbumDetailState({
         this.detail,
         this.isLoading = false,
@@ -251,6 +256,7 @@ class AlbumDetailState
         this.totalPageCount = 0,
         this.isLoadingPageCount = false,
         this.history,
+        this.isOfflineFallback = false,
     });
 
     /// 用于 UI 显示的总页数，优先使用异步计算结果
@@ -274,6 +280,7 @@ class AlbumDetailState
         int? totalPageCount,
         bool? isLoadingPageCount,
         BrowseHistoryModel? history,
+        bool? isOfflineFallback,
     })
     {
         return AlbumDetailState(
@@ -283,6 +290,7 @@ class AlbumDetailState
             totalPageCount: totalPageCount ?? this.totalPageCount,
             isLoadingPageCount: isLoadingPageCount ?? this.isLoadingPageCount,
             history: history ?? this.history,
+            isOfflineFallback: isOfflineFallback ?? this.isOfflineFallback,
         );
     }
 }
@@ -295,10 +303,19 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
     /// 浏览历史数据访问对象（记录浏览 + 读取上次阅读进度）
     final BrowseHistoryDao _historyDao;
 
-    AlbumDetailNotifier(this._client, this._historyDao)
+    /// 书架数据访问对象（网络失败时读取本地下载信息）
+    final LibraryDao _libraryDao;
+
+    /// Provider 引用，用于读取下载目录配置
+    final Ref _ref;
+
+    AlbumDetailNotifier(this._client, this._historyDao, this._libraryDao, this._ref)
         : super(const AlbumDetailState());
 
     /// 加载本子详情
+    ///
+    /// 网络请求失败时回退到本地书架与下载元数据，
+    /// 保证已下载漫画在断网状态下仍能进入详情页并打开本地阅读器。
     Future<void> loadDetail(String albumId) async
     {
         state = const AlbumDetailState(isLoading: true);
@@ -335,8 +352,115 @@ class AlbumDetailNotifier extends StateNotifier<AlbumDetailState>
         }
         catch (e)
         {
+            // 网络不可用时尝试用本地已下载内容重建详情
+            final localDetail = await _buildOfflineDetail(albumId);
+            if (localDetail != null)
+            {
+                BrowseHistoryModel? history;
+                try
+                {
+                    history = await _historyDao.getHistory(albumId);
+                }
+                catch (_)
+                {
+                    // 历史记录读取失败不影响离线详情展示
+                }
+                state = AlbumDetailState(
+                    detail: localDetail,
+                    history: history,
+                    isOfflineFallback: true,
+                );
+                return;
+            }
             state = AlbumDetailState(error: e.toString());
         }
+    }
+
+    /// 使用本地书架与下载元数据重建本子详情（离线兜底）
+    ///
+    /// 仅包含本地已下载的章节，返回值非 null 表示可以离线阅读。
+    Future<AlbumDetail?> _buildOfflineDetail(String albumId) async
+    {
+        try
+        {
+            final album = await _libraryDao.getByAlbumId(albumId);
+            if (album == null)
+            {
+                return null;
+            }
+
+            // 等待配置就绪后解析真实的下载根目录
+            await _ref.read(configProvider.notifier).initialized;
+            final configured = _ref.read(configProvider).config.downloadDir;
+            final downloadDir = await LibraryStorage.getDownloadDir(configured: configured);
+            final albumDir = await LibraryStorage.resolveAlbumDir(
+                album,
+                downloadDir: downloadDir,
+            );
+            if (!await Directory(albumDir).exists())
+            {
+                return null;
+            }
+
+            final (meta, _, _) = await LibraryStorage.loadAlbumMetadataWithChapters(albumDir);
+            final downloaded = album.downloadedEpisodes.toSet();
+            var episodes = meta?.episodes ?? const <Episode>[];
+
+            // 优先仅保留真正下载完成的章节，避免把未下载章节也列入离线列表
+            if (downloaded.isNotEmpty)
+            {
+                final filtered = episodes
+                    .where((e) => downloaded.contains(e.photoId))
+                    .toList();
+                if (filtered.isNotEmpty)
+                {
+                    episodes = filtered;
+                }
+            }
+            // 元数据缺失时，直接以书架记录的已下载章节兜底
+            if (episodes.isEmpty)
+            {
+                episodes = downloaded
+                    .map((photoId) => Episode(
+                        photoId: photoId,
+                        index: '',
+                        name: photoId,
+                    ))
+                    .toList();
+            }
+            if (episodes.isEmpty)
+            {
+                return null;
+            }
+
+            final sorted = List<Episode>.from(episodes)
+                ..sort((a, b) => _compareEpisodeIndex(a.index, b.index));
+
+            return AlbumDetail(
+                albumId: album.albumId,
+                name: (meta?.name.isNotEmpty ?? false) ? meta!.name : album.title,
+                author: (meta?.author.isNotEmpty ?? false) ? meta!.author : album.author,
+                pageCount: (meta?.pageCount ?? 0) > 0 ? meta!.pageCount : album.pageCount,
+                episodeCount: sorted.length,
+                episodes: sorted,
+            );
+        }
+        catch (_)
+        {
+            return null;
+        }
+    }
+
+    /// 比较章节序号：优先按数字大小，非数字回退到字符串比较
+    int _compareEpisodeIndex(String a, String b)
+    {
+        final numA = int.tryParse(a);
+        final numB = int.tryParse(b);
+        if (numA != null && numB != null)
+        {
+            return numA.compareTo(numB);
+        }
+        return a.compareTo(b);
     }
 
     /// 分批并发获取章节详情，统计本子总页数
@@ -380,6 +504,7 @@ final albumDetailProvider = StateNotifierProvider.family<AlbumDetailNotifier, Al
 {
     final client = ref.watch(jmClientProvider);
     final historyDao = ref.watch(browseHistoryDaoProvider);
-    return AlbumDetailNotifier(client, historyDao);
+    final libraryDao = ref.watch(libraryDaoProvider);
+    return AlbumDetailNotifier(client, historyDao, libraryDao, ref);
 });
 

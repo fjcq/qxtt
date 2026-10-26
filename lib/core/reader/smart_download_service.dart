@@ -194,6 +194,8 @@ class SmartDownloadService
                     if (!result.success)
                     {
                         _logger.w('[智能下载] $photoId/$filename 失败');
+                        // 失败的页不计入完成集合，保留 .ok 碎片供后续续传补页
+                        return;
                     }
                     completed.add(pageIndex);
                     await reportProgress();
@@ -212,6 +214,24 @@ class SmartDownloadService
 
             await Future.wait(futures);
             if (cancelToken.isCancelled) return;
+
+            // 有失败页时不写章节级 .complete，保留 .ok 碎片，
+            // 避免下次打开阅读器时把缺页章节误判为"整章本地可用"
+            if (completed.length < totalImages)
+            {
+                final partialProgress = totalImages > 0
+                    ? completed.length / totalImages
+                    : 0.0;
+                final message = '部分图片下载失败（${completed.length}/$totalImages）';
+                await _taskDao.updateTaskStatus(
+                    task.taskId, 'failed', message, partialProgress,
+                );
+                _emit(
+                    task.taskId, completed.length, totalImages,
+                    partialProgress, 'failed', message,
+                );
+                return;
+            }
 
             await _taskDao.updateTaskStatus(
                 task.taskId, 'completed', '下载完成', 1.0,

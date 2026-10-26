@@ -157,11 +157,14 @@ class TaskDao
     }
 
     /// 更新任务状态
+    ///
+    /// [progress] 为 null 时保留已持久化的进度，避免暂停/取消/失败时
+    /// 把断点续传所需的进度清零（下次恢复时进度条会跳回 0%）。
     Future<void> updateTaskStatus(
         String taskId,
         String status,
         String message,
-        double progress,
+        double? progress,
     ) async
     {
         await _ensureLoaded();
@@ -170,7 +173,10 @@ class TaskDao
         {
             task.status = status;
             task.message = message;
-            task.progress = progress;
+            if (progress != null)
+            {
+                task.progress = progress;
+            }
             task.updatedAt = DateTime.now().toIso8601String();
             await _save();
         }

@@ -199,11 +199,40 @@ extension DownloadServicePhotoHandler on DownloadService
             // 处理暂停
             if (wasPaused || cancelToken.isCancelled)
             {
+                final pausedProgress = totalImages > 0
+                    ? donePages.length / totalImages
+                    : 0.0;
                 await _taskDao.updateTaskStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
                 );
                 _emitStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
+                    photoId: photoId,
+                    chapterProgress: {
+                        photoId: ChapterProgress(
+                            completed: donePages.length,
+                            total: totalImages,
+                        ),
+                    },
+                );
+                return;
+            }
+
+            // 部分图片下载失败：不进 completed，标记失败让用户可续传补页
+            if (donePages.length < totalImages)
+            {
+                final partialProgress = totalImages > 0
+                    ? donePages.length / totalImages
+                    : 0.0;
+                await _taskDao.updateTaskStatus(
+                    taskId, 'failed',
+                    '部分图片下载失败（${donePages.length}/$totalImages）',
+                    partialProgress,
+                );
+                _emitStatus(
+                    taskId, 'failed',
+                    '部分图片下载失败（${donePages.length}/$totalImages）',
+                    partialProgress,
                     photoId: photoId,
                     chapterProgress: {
                         photoId: ChapterProgress(
@@ -262,11 +291,14 @@ extension DownloadServicePhotoHandler on DownloadService
         {
             if (wasPaused || _pausedTasks.contains(taskId))
             {
+                final pausedProgress = totalImages > 0
+                    ? donePages.length / totalImages
+                    : 0.0;
                 await _taskDao.updateTaskStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
                 );
                 _emitStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
                     photoId: photoId,
                     chapterProgress: {
                         photoId: ChapterProgress(
@@ -278,11 +310,14 @@ extension DownloadServicePhotoHandler on DownloadService
             }
             else if (!cancelToken.isCancelled)
             {
+                final failedProgress = totalImages > 0
+                    ? donePages.length / totalImages
+                    : 0.0;
                 await _taskDao.updateTaskStatus(
-                    taskId, 'failed', '下载失败: $e', 0.0,
+                    taskId, 'failed', '下载失败: $e', failedProgress,
                 );
                 _emitStatus(
-                    taskId, 'failed', '下载失败: $e', 0.0,
+                    taskId, 'failed', '下载失败: $e', failedProgress,
                     photoId: photoId,
                     chapterProgress: {
                         photoId: ChapterProgress(
@@ -374,6 +409,12 @@ extension DownloadServicePhotoHandler on DownloadService
                 if (result.success && result.bytes > 0)
                 {
                     _taskStats[taskId]?.addBytes(result.bytes);
+                }
+                // 仅成功的页才计入完成集合并广播"页就绪"，
+                // 失败页保持未完成，续传时会重新下载
+                if (!result.success)
+                {
+                    return;
                 }
                 completed.add(pageIndex);
                 // 【统一阅读】单页完成后广播事件，阅读器订阅后可精确刷新对应页

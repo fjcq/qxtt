@@ -51,11 +51,12 @@ class DownloadNotifier extends DownloadNotifierBase
     /// 应用启动时恢复未完成的任务
     /// - `pending` 任务：直接重新派发
     /// - `paused` 任务：重新派发（下载流程会自动跳过已有图片）
-    /// - `running` 任务：通常由上次崩溃造成；标记为 `paused` 让用户主动继续
+    /// - `running` 任务：通常由上次崩溃/直接关闭应用造成；保留已记录的进度
+    ///   并标记为 `paused`，让用户主动继续（续传不会从头开始）
     Future<void> _recoverOnStartup() async
     {
         final toResume = <DownloadTaskModel>[];
-        final toMarkPaused = <String>[];
+        final toMarkPaused = <DownloadTaskModel>[];
 
         for (final t in state.tasks)
         {
@@ -66,13 +67,16 @@ class DownloadNotifier extends DownloadNotifierBase
             else if (t.status == 'running')
             {
                 // 上次崩溃遗留的"运行中"任务，标记为 paused 等用户主动继续
-                toMarkPaused.add(t.taskId);
+                toMarkPaused.add(t);
             }
         }
 
-        for (final id in toMarkPaused)
+        for (final t in toMarkPaused)
         {
-            await taskDao.updateTaskStatus(id, 'paused', '上次未正常结束', 0.0);
+            // progress 传已持久化值：避免重启后进度条归零
+            await taskDao.updateTaskStatus(
+                t.taskId, 'paused', '上次未正常结束', t.progress,
+            );
         }
 
         if (toMarkPaused.isNotEmpty)

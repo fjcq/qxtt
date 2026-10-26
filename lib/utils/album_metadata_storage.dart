@@ -74,10 +74,15 @@ class AlbumMetadataStorage
     ///
     /// [chapters] 为可选的章节级扩展元数据（含 scrambleId + pageArr），
     /// 传入时会一并写入 `chapters` 字段，阅读器离线加载时可直接复用。
+    ///
+    /// [episodeDirs] 为可选的章节实际目录名映射（photoId → 目录名），
+    /// 用于记录与 `episode.index` 不一致的目录（例如本子更新后章节序号变化，
+    /// 旧章节仍保存在旧目录中），避免下次更新下载时找不到已完成章节。
     static Future<void> saveAlbumMetadata(
         String albumDir,
         AlbumDetail albumDetail, {
         Map<String, ChapterMetadata>? chapters,
+        Map<String, String>? episodeDirs,
     }) async
     {
         try
@@ -105,6 +110,10 @@ class AlbumMetadataStorage
                 json['chapters'] = chapters.map(
                     (key, value) => MapEntry(key, value.toJson()),
                 );
+            }
+            if (episodeDirs != null && episodeDirs.isNotEmpty)
+            {
+                json['episodeDirs'] = episodeDirs;
             }
             await file.writeAsString(jsonEncode(json), flush: true);
         }
@@ -163,6 +172,22 @@ class AlbumMetadataStorage
                 dirs[photoId] = '$albumDir${Platform.pathSeparator}$index';
             }
 
+            // 实际目录映射优先：本子更新后章节序号可能变化，
+            // 旧章节仍保存在旧目录中，用持久化的真实目录名纠正映射
+            final episodeDirsJson = json['episodeDirs'] as Map<String, dynamic>?;
+            if (episodeDirsJson != null)
+            {
+                episodeDirsJson.forEach((key, value)
+                {
+                    final dirName = value?.toString() ?? '';
+                    if (dirName.isNotEmpty)
+                    {
+                        dirs[key] =
+                            '$albumDir${Platform.pathSeparator}$dirName';
+                    }
+                });
+            }
+
             // 解析扩展章节元数据（scrambleId + pageArr）
             final chaptersJson = json['chapters'] as Map<String, dynamic>?;
             if (chaptersJson != null)
@@ -192,6 +217,27 @@ class AlbumMetadataStorage
         }
     }
 
+    /// 从完整目录路径映射中提取目录名映射
+    /// 用于在增量更新元数据时保留 `episodeDirs` 字段
+    static Map<String, String> _episodeDirNames(
+        String albumDir,
+        Map<String, String> dirs,
+    )
+    {
+        final prefix = '$albumDir${Platform.pathSeparator}';
+        final result = <String, String>{};
+        for (final entry in dirs.entries)
+        {
+            if (!entry.value.startsWith(prefix)) continue;
+            final name = entry.value.substring(prefix.length);
+            if (name.isNotEmpty)
+            {
+                result[entry.key] = name;
+            }
+        }
+        return result;
+    }
+
     /// 将单章信息追加或更新到本子元数据
     /// 适用于单章下载场景：多次下载同一本子的不同章节时，
     /// 逐步完善本地元数据，使离线重建章节列表更准确
@@ -207,7 +253,7 @@ class AlbumMetadataStorage
     {
         try
         {
-            final (existing, _, chapters) =
+            final (existing, dirs, chapters) =
                 await loadAlbumMetadataWithChapters(albumDir);
             final episodes = existing?.episodes.toList() ?? [];
             episodes.removeWhere((ep) => ep.photoId == photoId);
@@ -229,6 +275,7 @@ class AlbumMetadataStorage
             await saveAlbumMetadata(
                 albumDir, detail,
                 chapters: chapters,
+                episodeDirs: _episodeDirNames(albumDir, dirs),
             );
         }
         catch (_)
@@ -253,7 +300,7 @@ class AlbumMetadataStorage
     {
         try
         {
-            final (existing, _, chapters) =
+            final (existing, dirs, chapters) =
                 await loadAlbumMetadataWithChapters(albumDir);
             final episodes = existing?.episodes.toList() ?? [];
             episodes.removeWhere((ep) => ep.photoId == photoId);
@@ -284,6 +331,7 @@ class AlbumMetadataStorage
             await saveAlbumMetadata(
                 albumDir, detail,
                 chapters: newChapters,
+                episodeDirs: _episodeDirNames(albumDir, dirs),
             );
         }
         catch (_)

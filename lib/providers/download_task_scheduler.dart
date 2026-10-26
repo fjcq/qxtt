@@ -12,7 +12,8 @@ import 'library_provider.dart';
 mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
 {
     /// 创建下载任务并开始下载
-    /// 若存在未完成的同目标任务（pending/running/paused），不会重复创建
+    /// 若存在未完成的同目标任务（pending/running/paused），不会重复创建；
+    /// 其中 paused 任务会立即重新派发，按图片级断点续传继续下载
     /// 返回 (taskId, isNewlyCreated)
     Future<({String taskId, bool isNewlyCreated})> createAndStartDownload(
         String type,
@@ -28,6 +29,11 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
         final existing = _findActiveDuplicate(type, jmId, effectiveAlbumId);
         if (existing != null)
         {
+            // 暂停中的任务：用户再次点击下载即视为"继续"，直接续传
+            if (existing.status == 'paused')
+            {
+                _dispatchTask(existing);
+            }
             return (taskId: existing.taskId, isNewlyCreated: false);
         }
 
@@ -95,7 +101,8 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
     Future<void> cancelTask(String taskId) async
     {
         downloadService.cancelTask(taskId);
-        await taskDao.updateTaskStatus(taskId, 'cancelled', '已取消', 0.0);
+        // progress 传 null：保留上次进度，避免取消后恢复时从 0 开始
+        await taskDao.updateTaskStatus(taskId, 'cancelled', '已取消', null);
         await loadTasks();
     }
 
@@ -107,8 +114,8 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
     {
         downloadService.pauseTask(taskId);
         // 状态由 downloadAlbum / downloadPhoto 在 finally 写回，
-        // 这里也立即写一份，避免 UI 长时间停留在 running
-        await taskDao.updateTaskStatus(taskId, 'paused', '已暂停', 0.0);
+        // 这里也立即写一份，避免 UI 长时间停留在 running；进度保持不变
+        await taskDao.updateTaskStatus(taskId, 'paused', '已暂停', null);
         await loadTasks();
     }
 
@@ -130,11 +137,11 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
         return retryTask(taskId);
     }
 
-    /// 重试已失败的下载任务
-    /// - 取消当前任务（如有运行）
-    /// - 清理可能存在的本地部分文件，避免新旧数据混合
-    /// - 重置状态为 pending 并重新下载
-    /// 注意：paused 任务请使用 [resumeTask]；本方法会清理已下载的部分文件
+    /// 重试已失败/已取消的下载任务
+    ///
+    /// 【断点续传】保留本地已下载文件，重新派发任务后由下载流程扫描本地
+    /// 已有图片并跳过，只补下缺失部分（含已下载完成本子的新增章节）。
+    /// 仅在用户主动"删除任务"时才清理本地文件（见 [deleteTask]）。
     Future<bool> retryTask(String taskId) async
     {
         final task = state.tasks.where((t) => t.taskId == taskId).firstOrNull;
@@ -144,8 +151,8 @@ mixin DownloadTaskSchedulerMixin on DownloadNotifierBase
         if (task.status == 'paused') return resumeTask(taskId);
 
         downloadService.cancelTask(taskId);
-        await _cleanupTaskFiles(task);
-        await taskDao.updateTaskStatus(taskId, 'pending', '准备重试', 0.0);
+        // progress 传 null：保留断点进度，由重新派发的下载流程续算
+        await taskDao.updateTaskStatus(taskId, 'pending', '准备重试', null);
         await loadTasks();
         _dispatchTask(task);
         return true;

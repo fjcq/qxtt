@@ -175,13 +175,22 @@ Future<ImageDownloadResult> downloadOneImageWithDecode({
 
         final f = File(savePath);
         final fExists = await f.exists();
-        final needDecodeAnyway = !downloaded &&
-            fExists &&
-            JmImage.isUndecodedWebp(savePath);
+        // 下载失败且本地没有任何文件：明确返回失败，避免上层把该页
+        // 误记为"已完成"（会让进度虚高、并在续传时与真实文件不一致）
+        if (!fExists)
+        {
+            return ImageDownloadResult(
+                filename: filename,
+                pageIndex: pageIndex,
+                success: false,
+            );
+        }
 
+        final needDecodeAnyway = !downloaded && JmImage.isUndecodedWebp(savePath);
+        var decodeOk = true;
         if (downloaded || needDecodeAnyway)
         {
-            await _decodeAndSave(
+            decodeOk = await _decodeAndSave(
                 savePath,
                 scrambleId,
                 aid,
@@ -189,11 +198,13 @@ Future<ImageDownloadResult> downloadOneImageWithDecode({
             );
         }
 
-        final bytes = fExists ? await f.length() : 0;
+        final bytes = await f.length();
+        // 以 `.ok` 标记为准：只有解密成功并落标记才算这一页真正完成
+        final okExists = await FileExistenceCache.fileExists(okPath);
         return ImageDownloadResult(
             filename: filename,
             pageIndex: pageIndex,
-            success: true,
+            success: decodeOk && okExists && bytes > 0,
             bytes: bytes,
         );
     }
@@ -223,8 +234,8 @@ Future<ImageDownloadResult> downloadOneImageWithDecode({
 /// - 写回原路径
 /// - 写空 `.ok` 标记
 ///
-/// 失败时不抛异常（避免影响下载流程），仅记录日志。
-Future<void> _decodeAndSave(
+/// 返回是否成功写入 `.ok`；失败时不抛异常（避免影响下载流程），仅记录日志。
+Future<bool> _decodeAndSave(
     String savePath,
     int scrambleId,
     int aid,
@@ -260,6 +271,7 @@ Future<void> _decodeAndSave(
         FileExistenceCache.invalidate(okPath);
         _logger.d('[解密] 成功: $filename, '
             'before=${bytes.length}, after=${decoded.length}');
+        return true;
     }
     catch (e, st)
     {
@@ -270,6 +282,7 @@ Future<void> _decodeAndSave(
             error: e,
             stackTrace: st,
         );
+        return false;
     }
 }
 

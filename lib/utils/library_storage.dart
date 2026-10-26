@@ -39,10 +39,13 @@ class LibraryStorage
         String albumDir,
         AlbumDetail albumDetail, {
         Map<String, ChapterMetadata>? chapters,
+        Map<String, String>? episodeDirs,
     }) async
     {
         return AlbumMetadataStorage.saveAlbumMetadata(
-            albumDir, albumDetail, chapters: chapters,
+            albumDir, albumDetail,
+            chapters: chapters,
+            episodeDirs: episodeDirs,
         );
     }
 

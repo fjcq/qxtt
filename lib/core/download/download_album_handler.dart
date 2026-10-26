@@ -31,6 +31,8 @@ extension DownloadServiceAlbumHandler on DownloadService
         // 章节详情映射与已完成图片集合：提升到 try 外供 catch 块使用
         final detailByPhotoId = <String, PhotoDetail>{};
         final completedImages = <_AlbumImageKey>{};
+        // 总页数：提升到 try 外，供 catch 块按真实进度写回状态
+        var totalImages = 0;
 
         try
         {
@@ -65,7 +67,6 @@ extension DownloadServiceAlbumHandler on DownloadService
             await Future.wait(detailFutures);
             if (cancelToken.isCancelled) return;
 
-            var totalImages = 0;
             for (final detail in detailByPhotoId.values)
             {
                 totalImages += detail.pageArr.length;
@@ -83,18 +84,37 @@ extension DownloadServiceAlbumHandler on DownloadService
                 ? await PathHelper.getDownloadDir()
                 : _downloadDir;
 
+            // 复用已存在的本子目录：本子更新后书名可能变化，
+            // 若按新书名新建目录会导致已下载章节全部重下
+            final defaultAlbumDir =
+                '$downloadDir${Platform.pathSeparator}$safeAlbumTitle';
+            final albumDir = await _resolveAlbumDir(
+                downloadDir, albumId, defaultAlbumDir,
+            );
+            // 旧章节目录映射（photoId → 实际目录），兼容章节序号变化
+            final legacyEpisodeDirs = await _loadLegacyEpisodeDirs(albumDir);
+
+            /// 章节实际保存目录：优先复用旧目录，避免已下载章节重下
+            String episodeDirOf(Episode episode)
+            {
+                final legacyDir = legacyEpisodeDirs[episode.photoId];
+                if (legacyDir != null && legacyDir.isNotEmpty)
+                {
+                    return legacyDir;
+                }
+                final safeEpisodeIndex =
+                    DownloadService._sanitizeFileName(episode.index);
+                return '$albumDir${Platform.pathSeparator}$safeEpisodeIndex';
+            }
+
             // 断点续传：扫描本地已有图片，纳入初始完成集合
             // 这样进度条与持久化的 currentImage 不会因为续传而从 0 跳到 N
-            // 断点续传：扫描本地已有图片
-            final albumDir = '$downloadDir${Platform.pathSeparator}$safeAlbumTitle';
             for (final episode in albumDetail.episodes)
             {
                 if (cancelToken.isCancelled) break;
                 final detail = detailByPhotoId[episode.photoId];
                 if (detail == null) continue;
-                final safeEpisodeIndex =
-                    DownloadService._sanitizeFileName(episode.index);
-                final saveDir = '$albumDir${Platform.pathSeparator}$safeEpisodeIndex';
+                final saveDir = episodeDirOf(episode);
                 for (var i = 0; i < detail.pageArr.length; i++)
                 {
                     if (await _isImageDownloaded(saveDir, i))
@@ -173,8 +193,7 @@ extension DownloadServiceAlbumHandler on DownloadService
             {
                 if (cancelToken.isCancelled) return '';
                 final scrambleId = scrambleIds[episode.photoId] ?? 0;
-                final safeEpisodeIndex = DownloadService._sanitizeFileName(episode.index);
-                final saveDir = '$albumDir${Platform.pathSeparator}$safeEpisodeIndex';
+                final saveDir = episodeDirOf(episode);
                 await Directory(saveDir).create(recursive: true);
                 final aid = int.tryParse(episode.photoId) ?? 0;
 
@@ -212,6 +231,13 @@ extension DownloadServiceAlbumHandler on DownloadService
                             if (result.success && result.bytes > 0)
                             {
                                 _taskStats[taskId]?.addBytes(result.bytes);
+                            }
+                            // 仅成功的页才计入完成集合：失败的页保持未完成，
+                            // 续传时会被重新下载，进度条也不会虚高
+                            if (!result.success)
+                            {
+                                await reportProgress();
+                                return;
                             }
                             completedImages.add(_AlbumImageKey(episode.photoId, pageIndex));
                             // 边下边看：只要有一张图下载成功，立即把该章节加入部分可读集合
@@ -273,13 +299,37 @@ extension DownloadServiceAlbumHandler on DownloadService
             }
 
             // 处理暂停：状态置为 paused，方便 UI 区分；不清空本地文件
+            // progress 使用真实完成比例，避免暂停后进度条归零
             if (wasPaused || cancelToken.isCancelled)
             {
+                final pausedProgress = totalImages > 0
+                    ? completedImages.length / totalImages
+                    : 0.0;
                 await _taskDao.updateTaskStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
                 );
                 _emitStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
+                    chapterProgress: _buildChapterProgress(
+                        albumDetail, detailByPhotoId, completedImages,
+                    ),
+                );
+                return;
+            }
+
+            // 部分图片下载失败：不标记完成，保留已下载进度供用户重试补页
+            if (completedImages.length < totalImages)
+            {
+                final partialProgress = totalImages > 0
+                    ? completedImages.length / totalImages
+                    : 0.0;
+                final message =
+                    '部分图片下载失败（${completedImages.length}/$totalImages）';
+                await _taskDao.updateTaskStatus(
+                    taskId, 'failed', message, partialProgress,
+                );
+                _emitStatus(
+                    taskId, 'failed', message, partialProgress,
                     chapterProgress: _buildChapterProgress(
                         albumDetail, detailByPhotoId, completedImages,
                     ),
@@ -303,6 +353,9 @@ extension DownloadServiceAlbumHandler on DownloadService
                 // 一并持久化每个章节的 scrambleId + pageArr，
                 // 阅读器离线打开时可跳过 getPhotoDetail / getScrambleId 网络请求
                 final chapters = <String, ChapterMetadata>{};
+                // 记录章节实际目录名，供下次更新时按真实目录定位旧章节
+                final episodeDirs = <String, String>{};
+                final albumDirPrefix = '$albumDir${Platform.pathSeparator}';
                 for (final episode in albumDetail.episodes)
                 {
                     final detail = detailByPhotoId[episode.photoId];
@@ -314,10 +367,17 @@ extension DownloadServiceAlbumHandler on DownloadService
                         scrambleId: scrambleIds[episode.photoId] ?? 0,
                         pageArr: detail.pageArr,
                     );
+                    final dir = episodeDirOf(episode);
+                    if (dir.startsWith(albumDirPrefix))
+                    {
+                        episodeDirs[episode.photoId] =
+                            dir.substring(albumDirPrefix.length);
+                    }
                 }
                 await LibraryStorage.saveAlbumMetadata(
                     albumDir, albumDetail,
                     chapters: chapters,
+                    episodeDirs: episodeDirs,
                 );
                 _emitStatusWithPayload(
                     taskId, 'completed', '下载完成', 1.0,
@@ -342,21 +402,27 @@ extension DownloadServiceAlbumHandler on DownloadService
             // 暂停优先于异常：cancel 后已派发任务会抛 CancelException
             if (wasPaused || _pausedTasks.contains(taskId))
             {
+                final pausedProgress = totalImages > 0
+                    ? completedImages.length / totalImages
+                    : 0.0;
                 await _taskDao.updateTaskStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
                 );
                 _emitStatus(
-                    taskId, 'paused', '已暂停', 0.0,
+                    taskId, 'paused', '已暂停', pausedProgress,
                     chapterProgress: chapterProgress,
                 );
             }
             else if (!cancelToken.isCancelled)
             {
+                final failedProgress = totalImages > 0
+                    ? completedImages.length / totalImages
+                    : 0.0;
                 await _taskDao.updateTaskStatus(
-                    taskId, 'failed', '下载失败: $e', 0.0,
+                    taskId, 'failed', '下载失败: $e', failedProgress,
                 );
                 _emitStatus(
-                    taskId, 'failed', '下载失败: $e', 0.0,
+                    taskId, 'failed', '下载失败: $e', failedProgress,
                     chapterProgress: chapterProgress,
                 );
             }
@@ -367,6 +433,75 @@ extension DownloadServiceAlbumHandler on DownloadService
             _taskStats.remove(taskId);
             // paused 状态保留在 _pausedTasks 中，由 resume 移除
         }
+    }
+
+    /// 解析本子实际使用的本地根目录
+    ///
+    /// 优先复用同名目录；同名目录不存在时扫描下载根目录下的一级子目录，
+    /// 按 `.jm_album_meta.json` 中的 albumId 命中旧目录，
+    /// 避免本子更新后改名导致整本从头下载。
+    Future<String> _resolveAlbumDir(
+        String downloadDir,
+        String albumId,
+        String defaultAlbumDir,
+    ) async
+    {
+        if (await Directory(defaultAlbumDir).exists())
+        {
+            return defaultAlbumDir;
+        }
+        if (albumId.isEmpty) return defaultAlbumDir;
+        try
+        {
+            await for (final entity in Directory(downloadDir).list(
+                followLinks: false,
+            ))
+            {
+                if (entity is! Directory) continue;
+                final metaFile = File(
+                    '${entity.path}${Platform.pathSeparator}.jm_album_meta.json',
+                );
+                if (!await metaFile.exists()) continue;
+                try
+                {
+                    final json = jsonDecode(await metaFile.readAsString())
+                        as Map<String, dynamic>;
+                    if (json['albumId']?.toString() == albumId)
+                    {
+                        return entity.path;
+                    }
+                }
+                catch (_)
+                {
+                    // 单个元数据损坏不影响其它目录扫描
+                }
+            }
+        }
+        catch (_)
+        {
+            // 下载根目录不可读时回退默认目录
+        }
+        return defaultAlbumDir;
+    }
+
+    /// 加载旧章节目录映射（photoId → 已存在的目录）
+    ///
+    /// 本子更新后章节序号可能变化，旧章节仍保存在旧目录中。
+    /// 仅保留实际存在的目录，避免指向幽灵路径导致重复下载。
+    Future<Map<String, String>> _loadLegacyEpisodeDirs(String albumDir) async
+    {
+        final (_, dirs, _) =
+            await AlbumMetadataStorage.loadAlbumMetadataWithChapters(albumDir);
+        if (dirs.isEmpty) return const <String, String>{};
+        final valid = <String, String>{};
+        for (final entry in dirs.entries)
+        {
+            if (await Directory(entry.value).exists())
+            {
+                valid[entry.key] = entry.value;
+            }
+        }
+        return valid;
     }
 
     /// 判断指定章节是否所有页都已完成（用于增量入书架）

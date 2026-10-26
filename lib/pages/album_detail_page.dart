@@ -62,14 +62,15 @@ class AlbumDetailPage extends ConsumerWidget
                     onPressed: () => context.pop(),
                 ),
                 actions: [
-                    if (state.detail != null)
+                    // 离线兜底详情不展示需要联网的操作（收藏 / 下载）
+                    if (state.detail != null && !state.isOfflineFallback)
                         AlbumDetailFavoriteButton(
                             albumId: albumId,
                             // 以详情接口返回的 is_favorite 初始化收藏状态，
                             // 使从收藏页等任意入口进入时状态与真实收藏夹一致
                             initiallyFavorite: state.detail!.isFavorite,
                         ),
-                    if (state.detail != null)
+                    if (state.detail != null && !state.isOfflineFallback)
                         _DownloadAppBarButton(
                             albumTask: albumTask,
                             onDownload: () =>
@@ -124,6 +125,11 @@ class AlbumDetailPage extends ConsumerWidget
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                    // 离线提示：详情由本地数据兜底，仅展示已下载章节
+                    if (state.isOfflineFallback) ...[
+                        _buildOfflineBanner(context, ref),
+                        const SizedBox(height: 16),
+                    ],
                     // 封面和信息
                     AlbumDetailInfoSection(state: state),
                     const SizedBox(height: 16),
@@ -142,12 +148,54 @@ class AlbumDetailPage extends ConsumerWidget
         );
     }
 
+    /// 构建离线兜底提示条
+    ///
+    /// 说明当前详情来自本地数据，仅展示已下载章节，并提供重新联网后的重试入口。
+    Widget _buildOfflineBanner(BuildContext context, WidgetRef ref)
+    {
+        return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+                color: context.appColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+                children: [
+                    Icon(
+                        Icons.cloud_off,
+                        size: 18,
+                        color: context.appColors.accent,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(
+                            '网络不可用，当前仅显示本地已下载内容',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: context.appColors.textSecondary,
+                            ),
+                        ),
+                    ),
+                    TextButton(
+                        onPressed: () => ref
+                            .read(albumDetailProvider(albumId).notifier)
+                            .loadDetail(albumId),
+                        child: const Text('重试'),
+                    ),
+                ],
+            ),
+        );
+    }
+
     /// 跳转阅读器：已下载章节走本地阅读器（离线可读），未下载走在线阅读器
+    ///
+    /// 离线兜底详情中的章节均来自本地，直接走本地阅读器。
     void _pushReader(BuildContext context, WidgetRef ref, String photoId)
     {
         final downloaded = ref.read(downloadedEpisodesProvider(albumId));
+        final offline = ref.read(albumDetailProvider(albumId)).isOfflineFallback;
         context.push(
-            downloaded.contains(photoId)
+            downloaded.contains(photoId) || offline
                 ? '/reader/$photoId'
                 : '/reader/online/$photoId',
         );
@@ -157,7 +205,11 @@ class AlbumDetailPage extends ConsumerWidget
     Widget _buildEpisodes(BuildContext context, WidgetRef ref, AlbumDetail detail)
     {
         // 监听本子已下载的章节 ID 集合，用于隐藏对应下载按钮
-        final downloadedPhotoIds = ref.watch(downloadedEpisodesProvider(albumId));
+        // 离线兜底详情中的章节全部来自本地，视为已下载
+        final offline = ref.watch(albumDetailProvider(albumId)).isOfflineFallback;
+        final downloadedPhotoIds = offline
+            ? detail.episodes.map((e) => e.photoId).toSet()
+            : ref.watch(downloadedEpisodesProvider(albumId));
         // 监听本子关联的下载任务，合并章节级进度（整本优先，单章补充）
         final downloadTasks = ref.watch(albumDownloadTasksProvider(albumId));
         final albumTask = firstAlbumTask(downloadTasks);
@@ -196,7 +248,12 @@ class AlbumDetailPage extends ConsumerWidget
     Widget _buildBottomBar(BuildContext context, WidgetRef ref, AlbumDetailState state)
     {
         final detail = state.detail!;
-        final canResume = state.hasReadProgress;
+        // 离线兜底时，只有上次阅读章节也在本地才显示"继续阅读"
+        final canResume = state.hasReadProgress &&
+            (!state.isOfflineFallback ||
+                detail.episodes.any(
+                    (e) => e.photoId == state.history!.lastReadPhotoId,
+                ));
         final history = state.history;
 
         // 已下载章节集合，用于本地阅读路由与整本下载状态判断
@@ -205,8 +262,9 @@ class AlbumDetailPage extends ConsumerWidget
         final downloadTasks = ref.watch(albumDownloadTasksProvider(albumId));
         final albumTask = firstAlbumTask(downloadTasks);
         // 整本（所有章节）均已下载时，底部按钮切换为"本地阅读"
-        final allDownloaded =
-            detail.episodes.isNotEmpty && downloaded.length >= detail.episodes.length;
+        // 离线兜底详情只包含本地章节，同样视为整本已下载
+        final allDownloaded = state.isOfflineFallback ||
+            (detail.episodes.isNotEmpty && downloaded.length >= detail.episodes.length);
 
         // 继续阅读按钮文案：定位到上次阅读的章节名（找不到章节时仅显示"继续阅读"）
         String resumeLabel = '继续阅读';
@@ -273,7 +331,11 @@ class AlbumDetailPage extends ConsumerWidget
                                             final resume = canResume
                                                 ? (history!.lastReadPhotoId ?? '')
                                                 : '';
-                                            final target = resume.isNotEmpty
+                                            // 仅在续读章节确实存在于当前章节列表时使用，
+                                            // 避免离线兜底时跳到未下载的章节
+                                            final target = detail.episodes.any(
+                                                (e) => e.photoId == resume,
+                                            )
                                                 ? resume
                                                 : detail.episodes.first.photoId;
                                             context.push('/reader/$target');
